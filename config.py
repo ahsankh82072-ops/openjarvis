@@ -24,7 +24,7 @@ class JarvisConfig:
     keep_alive: str = "15m"
     voice_enabled: bool = True
     dry_run: bool = False
-    ask_before_every_action: bool = True
+    ask_before_every_action: bool = False
     always_on_top: bool = False
     max_steps: int = 15
 

@@ -520,6 +520,8 @@ class JarvisApp(ctk.CTk):
         elif mode == "screen":
             self.view_screen.pack(fill="both", expand=True)
             self.btn_mode_screen.configure(fg_color=_ACCENT_CYAN, text_color="#000000")
+            # Automatically capture and inspect active screen immediately
+            self.after(60, self.worker.describe_current_screen)
 
     # ─────────────────────────────────────────────────────────────
     #  EVENT HANDLERS & CALLBACKS

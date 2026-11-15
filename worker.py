@@ -56,6 +56,7 @@ class JarvisWorker:
 
         self.plan_approval_event = threading.Event()
         self.plan_approved = False
+        self.waiting_for_plan_approval = False
 
         self.step_approval_event = threading.Event()
         self.step_approved = False
@@ -77,6 +78,7 @@ class JarvisWorker:
         """
         Continuous background microphone listener that listens for 'Hey Jarvis' or 'Jarvis'
         even when the window is minimized or behind other applications.
+        Also handles hands-free voice approvals ('yes', 'proceed', 'cancel').
         """
         try:
             import speech_recognition as sr
@@ -84,17 +86,16 @@ class JarvisWorker:
             return
 
         recognizer = sr.Recognizer()
-        recognizer.dynamic_energy_threshold = False
+        recognizer.dynamic_energy_threshold = True
         recognizer.pause_threshold = 0.8
         recognizer.phrase_threshold = 0.2
-        recognizer.non_speaking_duration = 0.4
+        recognizer.non_speaking_duration = 0.3
 
         try:
             with sr.Microphone() as source:
-                recognizer.adjust_for_ambient_noise(source, duration=0.8)
-                recognizer.energy_threshold = max(35.0, min(recognizer.energy_threshold, 65.0))
+                recognizer.adjust_for_ambient_noise(source, duration=0.6)
         except Exception:
-            recognizer.energy_threshold = 150.0
+            pass
 
         wake_regex = re.compile(
             r'\b(hey|hay|hi|hello|ok|yo|ai|wake\s+up)?\s*(jarvis|javis|jarves|jervis|travis|service|chavez|jar|java)\b',
@@ -127,6 +128,17 @@ class JarvisWorker:
                 continue
 
             lower = text.lower().strip()
+
+            # Voice Plan Approval Check (Hands-Free!)
+            if self.waiting_for_plan_approval:
+                if any(w in lower for w in ["yes", "approve", "proceed", "go", "go ahead", "do it", "sure", "ok", "okay"]):
+                    self.approve_plan(True)
+                    self._speak("Plan approved, executing now.")
+                    continue
+                elif any(w in lower for w in ["no", "cancel", "stop", "abort", "don't", "dont"]):
+                    self.approve_plan(False)
+                    self._speak("Plan cancelled, sir.")
+                    continue
 
             # Check if previous awake window expired
             if is_awake and time.time() > awake_until:
@@ -515,7 +527,9 @@ class JarvisWorker:
 
             msg = f"🖥️ **Active Window**: {window_title}\n\n{vision_reply}"
             self.cb.get("on_chat", lambda s, t: None)("Jarvis", msg)
-            self._speak("Here is what is on your screen, sir.")
+            clean_summary = re.sub(r"[*_#`\n\r]", " ", vision_reply).strip()
+            clean_summary = re.sub(r"\s+", " ", clean_summary)[:140]
+            self._speak(f"Active window is {window_title}. {clean_summary}")
             self.cb.get("on_status", lambda s: None)("Idle")
 
         threading.Thread(target=_task, daemon=True).start()
@@ -574,19 +588,29 @@ class JarvisWorker:
 
         is_risky = any(crit in user_goal.lower() or crit in plan_text.lower() for crit in _CRITICAL_ACTIONS)
 
-        # Request user approval via Plan Card
-        self.cb.get("on_status", lambda s: None)("Waiting for your approval")
-        self.cb.get("on_plan", lambda p, r: None)(plan_text, is_risky)
-        self._speak("I have a plan. Please approve or cancel on screen.")
+        clean_plan = re.sub(r"[*_#`\n\r]", " ", plan_text).strip()
+        clean_plan = re.sub(r"\s+", " ", clean_plan)[:130]
 
-        self.plan_approval_event.clear()
-        self.plan_approval_event.wait()
+        if not is_risky and not config.ask_before_every_action:
+            # SAFE TASK -> Auto-execute directly without stopping!
+            self.cb.get("on_chat", lambda s, t: None)("Jarvis", f"⚡ Executing plan: {plan_text}")
+            self._speak(f"Executing plan: {clean_plan}")
+        else:
+            # RISKY TASK or manual confirmation requested -> Read aloud and ask for approval
+            self.cb.get("on_status", lambda s: None)("Waiting for your approval")
+            self.cb.get("on_plan", lambda p, r: None)(plan_text, is_risky)
+            self._speak(f"Plan proposed: {clean_plan}. Say 'yes' or click approve to proceed.")
 
-        if self.emergency_stop or not self.plan_approved:
-            self.cb.get("on_chat", lambda s, t: None)("Jarvis", "❌ Plan cancelled by user.")
-            return
+            self.waiting_for_plan_approval = True
+            self.plan_approval_event.clear()
+            self.plan_approval_event.wait()
+            self.waiting_for_plan_approval = False
 
-        self.cb.get("on_chat", lambda s, t: None)("Jarvis", f"✅ Plan approved. Starting execution...")
+            if self.emergency_stop or not self.plan_approved:
+                self.cb.get("on_chat", lambda s, t: None)("Jarvis", "❌ Plan cancelled by user.")
+                return
+
+            self.cb.get("on_chat", lambda s, t: None)("Jarvis", f"✅ Plan approved. Starting execution...")
 
         # Action Execution Loop
         step_num = 0

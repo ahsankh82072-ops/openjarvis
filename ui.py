@@ -1,22 +1,26 @@
 """
-ui.py — Modern Dark Graphical Desktop Application for Jarvis Screen Assistant.
-Built using CustomTkinter with real-time screen preview, plan approval cards,
-action logging, settings, push-to-talk voice animations, and system tray.
+ui.py — Jarvis Desktop Application with 3 Separated Modes and Hovering Voice HUD.
+Modes:
+  1. 💬 Chat Assistant: Messaging interface with text input & plan approval cards.
+  2. 🎙️ Voice Talking Mode: Futuristic Iron Man arc-reactor logo hovering in the center with sound waves and live speech transcript.
+  3. 🖥️ Screen & Action Control: Screen preview, real-time window inspection, and action logs.
 """
 
 from __future__ import annotations
 
+import argparse
 import io
+import math
 import os
 import sys
 import threading
 import time
+import tkinter as tk
 from typing import Optional
 
 import customtkinter as ctk
 from PIL import Image, ImageTk
 
-# Import local worker and configuration
 _APP_DIR = os.path.dirname(os.path.abspath(__file__))
 if _APP_DIR not in sys.path:
     sys.path.insert(0, _APP_DIR)
@@ -24,30 +28,142 @@ if _APP_DIR not in sys.path:
 from config import config
 from worker import JarvisWorker
 
-# Appearance setup
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
+# Theme Colors
 _ACCENT_CYAN = "#00e5ff"
-_ACCENT_RED = "#ff3366"
+_ACCENT_MAGENTA = "#d500f9"
 _ACCENT_GREEN = "#00e676"
-_BG_DARK = "#0d1117"
-_CARD_BG = "#161b22"
-_USER_BUBBLE = "#1f3a5f"
-_JARVIS_BUBBLE = "#1b2838"
+_ACCENT_RED = "#ff1744"
+_ACCENT_GOLD = "#ffd600"
+_BG_DARK = "#0a0e14"
+_CARD_BG = "#131922"
+_USER_BUBBLE = "#1e3a5f"
+_JARVIS_BUBBLE = "#152332"
+
+
+class HoveringJarvisLogo(ctk.CTkCanvas):
+    """Futuristic holographic Jarvis core that hovers in the center and pulses with speech."""
+
+    def __init__(self, master, width=380, height=340, **kwargs):
+        super().__init__(master, width=width, height=height, bg=_BG_DARK, highlightthickness=0, **kwargs)
+        self.width = width
+        self.height = height
+        self.hover_angle = 0.0
+        self.pulse_phase = 0.0
+        self.rotation_angle = 0.0
+        self.state = "Idle"  # Idle, Listening, Thinking, Speaking, Stopped
+        self._animating = True
+        self._animate()
+
+    def set_state(self, state: str) -> None:
+        self.state = state
+
+    def _animate(self) -> None:
+        if not self._animating:
+            return
+
+        self.delete("all")
+        self.hover_angle += 0.06
+        self.pulse_phase += 0.12
+        self.rotation_angle += 2.0
+
+        # Hover offset (smooth floating bobbing effect)
+        hover_y = math.sin(self.hover_angle) * 12.0
+        cx = self.width / 2.0
+        cy = (self.height / 2.0) + hover_y
+
+        # Determine theme color based on status
+        if self.state == "Listening":
+            core_color = _ACCENT_MAGENTA
+            ring_color = "#ea80fc"
+            status_text = "🎙️ LISTENING..."
+        elif self.state == "Thinking":
+            core_color = _ACCENT_GOLD
+            ring_color = "#ffe57f"
+            status_text = "🧠 THINKING..."
+        elif self.state == "Acting":
+            core_color = "#ff6d00"
+            ring_color = "#ffab40"
+            status_text = "⚡ ACTING..."
+        elif self.state == "Stopped":
+            core_color = _ACCENT_RED
+            ring_color = "#ff8a80"
+            status_text = "🛑 STOPPED"
+        else:
+            core_color = _ACCENT_CYAN
+            ring_color = "#80d8ff"
+            status_text = "✨ STANDBY — SPEAK ALOUD"
+
+        # 1. Outer Expanding Sound Waves (when listening or speaking)
+        if self.state in ["Listening", "Acting"]:
+            for i in range(3):
+                wave_r = 90 + ((self.pulse_phase * 15 + i * 35) % 65)
+                alpha_val = max(0, int(255 - (wave_r - 90) * 3.5))
+                if wave_r > 90:
+                    self.create_oval(
+                        cx - wave_r, cy - wave_r, cx + wave_r, cy + wave_r,
+                        outline=ring_color, width=1
+                    )
+
+        # 2. Outer Rotating Sci-Fi Ring
+        outer_r = 110 + math.sin(self.pulse_phase) * 3
+        self.create_oval(cx - outer_r, cy - outer_r, cx + outer_r, cy + outer_r, outline="#1f2d3d", width=3)
+
+        # Rotating Arc segments
+        arc_start = self.rotation_angle % 360
+        self.create_arc(
+            cx - outer_r, cy - outer_r, cx + outer_r, cy + outer_r,
+            start=arc_start, extent=70, outline=core_color, width=3, style="arc"
+        )
+        self.create_arc(
+            cx - outer_r, cy - outer_r, cx + outer_r, cy + outer_r,
+            start=(arc_start + 180) % 360, extent=70, outline=core_color, width=3, style="arc"
+        )
+
+        # 3. Middle Glow Ring
+        mid_r = 75 + math.sin(self.pulse_phase * 1.5) * 4
+        self.create_oval(cx - mid_r, cy - mid_r, cx + mid_r, cy + mid_r, outline=ring_color, width=2)
+
+        # 4. Core Circle (Pulsing)
+        core_r = 50 + math.sin(self.pulse_phase * 2) * 3
+        self.create_oval(cx - core_r, cy - core_r, cx + core_r, cy + core_r, fill="#0d1722", outline=core_color, width=2)
+
+        # 5. Center Arc Reactor Nodes
+        node_r = 22
+        self.create_oval(cx - node_r, cy - node_r, cx + node_r, cy + node_r, fill=core_color, outline="#ffffff", width=1)
+
+        # 6. Central Brand Text
+        self.create_text(
+            cx, cy - 2,
+            text="J.A.R.V.I.S.",
+            fill="#ffffff",
+            font=("Segoe UI", 11, "bold")
+        )
+
+        # 7. Bottom Status Caption
+        self.create_text(
+            cx, cy + 135,
+            text=status_text,
+            fill=core_color,
+            font=("Segoe UI", 12, "bold")
+        )
+
+        self.after(35, self._animate)
 
 
 class JarvisApp(ctk.CTk):
-    """Main Application Window for Jarvis."""
+    """Modern Desktop Application for Jarvis with 3 Separated Modes."""
 
-    def __init__(self) -> None:
+    def __init__(self, start_mode: str = "voice") -> None:
         super().__init__()
 
-        self.title("J.A.R.V.I.S. — Desktop Screen Assistant")
-        self.geometry("980x720")
-        self.minsize(840, 600)
+        self.title("J.A.R.V.I.S. — Autonomous Screen Assistant")
+        self.geometry("1040x740")
+        self.minsize(880, 620)
+        self.configure(fg_color=_BG_DARK)
 
-        # Worker initialization
         self.worker = JarvisWorker(
             callbacks={
                 "on_status": self._thread_safe(self.update_status),
@@ -59,54 +175,45 @@ class JarvisApp(ctk.CTk):
             }
         )
 
-        # UI state
-        self.is_listening = False
-        self._mic_pulse_step = 0
+        self.current_mode = start_mode
         self._thumbnail_img: Optional[ctk.CTkImage] = None
 
-        self._build_ui()
-        self._setup_system_tray()
+        self._build_header()
+        self._build_views()
 
-        # Apply saved settings
         if config.always_on_top:
             self.attributes("-topmost", True)
             self.topmost_switch.select()
 
-        # Welcome message
-        self.add_chat_message(
-            "Jarvis",
-            "Greetings! I am Jarvis, your autonomous screen assistant.\n"
-            "• Ask **'What's on my screen?'** or click the preview button.\n"
-            "• Ask me to perform computer tasks like opening apps or typing.\n"
-            "• Emergency Stop: Click the red STOP button or press **Ctrl + Alt + Q**.",
-        )
+        # Switch to the requested initial mode
+        self.switch_mode(start_mode)
+
+        # Initial greet
+        self.add_chat_message("Jarvis", "Jarvis online and ready, sir. Speak aloud or choose any mode above.")
 
     def _thread_safe(self, func):
-        """Wrap worker callbacks to ensure execution on Tkinter's main thread."""
         def _wrapper(*args, **kwargs):
             self.after(0, lambda: func(*args, **kwargs))
         return _wrapper
 
     # ─────────────────────────────────────────────────────────────
-    #  UI LAYOUT
+    #  TOP HEADER & MODE SELECTOR
     # ─────────────────────────────────────────────────────────────
-    def _build_ui(self) -> None:
-        # 1. Top Header Bar
-        self.header_frame = ctk.CTkFrame(self, height=54, corner_radius=0, fg_color="#101620")
+    def _build_header(self) -> None:
+        self.header_frame = ctk.CTkFrame(self, height=58, corner_radius=0, fg_color="#0e141d")
         self.header_frame.pack(fill="x", side="top")
 
-        # Title Label
-        self.logo_lbl = ctk.CTkLabel(
+        # Logo
+        ctk.CTkLabel(
             self.header_frame,
             text="⚡ J.A.R.V.I.S.",
             font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"),
             text_color=_ACCENT_CYAN,
-        )
-        self.logo_lbl.pack(side="left", padx=16, pady=8)
+        ).pack(side="left", padx=16, pady=10)
 
-        # Status Badge Frame
-        self.status_container = ctk.CTkFrame(self.header_frame, fg_color="#182330", corner_radius=14)
-        self.status_container.pack(side="left", padx=10, pady=8)
+        # Status Dot & Label
+        self.status_container = ctk.CTkFrame(self.header_frame, fg_color="#151e2b", corner_radius=14)
+        self.status_container.pack(side="left", padx=8, pady=10)
 
         self.status_dot = ctk.CTkLabel(self.status_container, text="●", text_color=_ACCENT_GREEN, font=ctk.CTkFont(size=14))
         self.status_dot.pack(side="left", padx=(10, 4), pady=4)
@@ -114,120 +221,146 @@ class JarvisApp(ctk.CTk):
         self.status_lbl = ctk.CTkLabel(
             self.status_container,
             text="Idle",
-            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+            font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
             text_color="#c9d1d9",
         )
         self.status_lbl.pack(side="left", padx=(0, 12), pady=4)
 
-        # Big Red Emergency STOP Button
-        self.stop_btn = ctk.CTkButton(
+        # 3 SEPARATED MODE BUTTONS (Center of Header)
+        self.mode_frame = ctk.CTkFrame(self.header_frame, fg_color="#121822", corner_radius=12)
+        self.mode_frame.pack(side="left", padx=20, pady=8)
+
+        self.btn_mode_voice = ctk.CTkButton(
+            self.mode_frame,
+            text="🎙️ Voice Talking Mode",
+            width=150,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=_ACCENT_CYAN,
+            text_color="#000000",
+            command=lambda: self.switch_mode("voice"),
+        )
+        self.btn_mode_voice.pack(side="left", padx=4, pady=4)
+
+        self.btn_mode_chat = ctk.CTkButton(
+            self.mode_frame,
+            text="💬 Chat Assistant",
+            width=140,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color="#1e2633",
+            text_color="#c9d1d9",
+            command=lambda: self.switch_mode("chat"),
+        )
+        self.btn_mode_chat.pack(side="left", padx=4, pady=4)
+
+        self.btn_mode_screen = ctk.CTkButton(
+            self.mode_frame,
+            text="🖥️ Screen Control",
+            width=140,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color="#1e2633",
+            text_color="#c9d1d9",
+            command=lambda: self.switch_mode("screen"),
+        )
+        self.btn_mode_screen.pack(side="left", padx=4, pady=4)
+
+        # Big Red Emergency STOP Button (Top Right)
+        ctk.CTkButton(
             self.header_frame,
-            text="🚨 EMERGENCY STOP (Ctrl+Alt+Q)",
+            text="🚨 EMERGENCY STOP",
             fg_color="#d32f2f",
             hover_color="#b71c1c",
             font=ctk.CTkFont(size=12, weight="bold"),
             height=34,
             command=self.on_emergency_stop_clicked,
-        )
-        self.stop_btn.pack(side="right", padx=14, pady=8)
+        ).pack(side="right", padx=14, pady=10)
 
-        # Always-On-Top Switch
+        # Pin On Top
         self.topmost_switch = ctk.CTkSwitch(
             self.header_frame,
             text="Pin on top",
             font=ctk.CTkFont(size=12),
             command=self.toggle_always_on_top,
         )
-        self.topmost_switch.pack(side="right", padx=12, pady=8)
+        self.topmost_switch.pack(side="right", padx=10, pady=10)
 
-        # 2. Main Content Split (Left: Tabs | Right: Screen Preview)
-        self.body_paned = ctk.CTkFrame(self, fg_color=_BG_DARK)
-        self.body_paned.pack(fill="both", expand=True, padx=8, pady=(4, 8))
+    # ─────────────────────────────────────────────────────────────
+    #  BUILD THE 3 SEPARATED VIEWS
+    # ─────────────────────────────────────────────────────────────
+    def _build_views(self) -> None:
+        self.view_container = ctk.CTkFrame(self, fg_color="transparent")
+        self.view_container.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Right Sidebar for Screen Preview
-        self.sidebar_frame = ctk.CTkFrame(self.body_paned, width=260, fg_color=_CARD_BG, corner_radius=10)
-        self.sidebar_frame.pack(side="right", fill="y", padx=(6, 0), pady=4)
-        self.sidebar_frame.pack_propagate(False)
+        # VIEW 1: VOICE TALKING MODE (Center Hovering Logo HUD)
+        self.view_voice = ctk.CTkFrame(self.view_container, fg_color=_BG_DARK)
+        self._build_voice_mode_view()
 
-        self._build_sidebar()
+        # VIEW 2: CHAT ASSISTANT
+        self.view_chat = ctk.CTkFrame(self.view_container, fg_color=_BG_DARK)
+        self._build_chat_view()
 
-        # Left Notebook/Tabs
-        self.tabview = ctk.CTkTabview(self.body_paned, fg_color="#121820", segmented_button_selected_color=_ACCENT_CYAN)
-        self.tabview.pack(side="left", fill="both", expand=True, padx=(0, 4), pady=0)
+        # VIEW 3: SCREEN & ACTION CONTROL
+        self.view_screen = ctk.CTkFrame(self.view_container, fg_color=_BG_DARK)
+        self._build_screen_control_view()
 
-        self.chat_tab = self.tabview.add("💬 Assistant Chat")
-        self.logs_tab = self.tabview.add("📜 Action Log")
-        self.settings_tab = self.tabview.add("⚙️ Settings")
+    # ─────────────────────────────────────────────────────────────
+    #  1. VOICE TALKING MODE VIEW (CENTER HOVERING LOGO)
+    # ─────────────────────────────────────────────────────────────
+    def _build_voice_mode_view(self) -> None:
+        # Center Hovering Arc-Reactor Logo Canvas
+        self.logo_canvas = HoveringJarvisLogo(self.view_voice, width=420, height=360)
+        self.logo_canvas.pack(pady=(15, 5))
 
-        self._build_chat_tab()
-        self._build_logs_tab()
-        self._build_settings_tab()
+        # Big Voice Push-to-Talk Button
+        self.voice_action_btn = ctk.CTkButton(
+            self.view_voice,
+            text="🎙️ PRESS & SPEAK (OR SAY 'HEY JARVIS')",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color=_ACCENT_CYAN,
+            text_color="#000000",
+            hover_color="#00b0ff",
+            height=46,
+            width=360,
+            command=self.on_voice_talk_clicked,
+        )
+        self.voice_action_btn.pack(pady=8)
 
-    def _build_sidebar(self) -> None:
-        """Right sidebar containing live screen thumbnail and quick trigger."""
-        lbl = ctk.CTkLabel(
-            self.sidebar_frame,
-            text="🖥️ SCREEN PREVIEW",
+        # Live Transcript Dialogue Card
+        self.voice_card = ctk.CTkFrame(self.view_voice, fg_color=_CARD_BG, corner_radius=12, width=640)
+        self.voice_card.pack(fill="x", padx=60, pady=12)
+
+        self.voice_user_text = ctk.CTkLabel(
+            self.voice_card,
+            text="You: Speak a command like 'open youtube and play music' or 'what is on my screen'...",
             font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=_ACCENT_CYAN,
+            text_color="#80d8ff",
+            wraplength=600,
+            justify="center",
         )
-        lbl.pack(anchor="w", padx=12, pady=(12, 6))
+        self.voice_user_text.pack(padx=20, pady=(12, 6))
 
-        # Preview Thumbnail Box
-        self.preview_lbl = ctk.CTkLabel(
-            self.sidebar_frame,
-            text="No screenshot taken yet",
-            width=236,
-            height=140,
-            fg_color="#0d1117",
-            corner_radius=8,
-            text_color="#8b949e",
+        self.voice_jarvis_text = ctk.CTkLabel(
+            self.voice_card,
+            text="Jarvis: Standing by for your instructions, sir.",
+            font=ctk.CTkFont(size=13),
+            text_color="#c9d1d9",
+            wraplength=600,
+            justify="center",
         )
-        self.preview_lbl.pack(padx=12, pady=6)
+        self.voice_jarvis_text.pack(padx=20, pady=(0, 14))
 
-        # Active Window Label
-        self.win_title_lbl = ctk.CTkLabel(
-            self.sidebar_frame,
-            text="Window: Active Desktop",
-            font=ctk.CTkFont(size=11),
-            text_color="#8b949e",
-            wraplength=230,
-            justify="left",
-        )
-        self.win_title_lbl.pack(anchor="w", padx=12, pady=(2, 10))
-
-        # Quick Action Button: What's on my screen?
-        self.inspect_btn = ctk.CTkButton(
-            self.sidebar_frame,
-            text="👀 What's on my screen?",
-            fg_color="#006699",
-            hover_color="#0088cc",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            height=34,
-            command=self.on_inspect_screen_clicked,
-        )
-        self.inspect_btn.pack(fill="x", padx=12, pady=6)
-
-        # Info Box
-        info_frame = ctk.CTkFrame(self.sidebar_frame, fg_color="#101722", corner_radius=8)
-        info_frame.pack(fill="x", padx=12, pady=(16, 8))
-
-        ctk.CTkLabel(
-            info_frame,
-            text="🛡️ Safety Controls Active\n• Max 15 steps per task\n• Passwords blocked\n• Corner mouse abort",
-            font=ctk.CTkFont(size=11),
-            text_color="#7ee787",
-            justify="left",
-        ).pack(padx=10, pady=8)
-
-    def _build_chat_tab(self) -> None:
-        """Chat message area, Plan Approval Card, and Input Bar."""
+    # ─────────────────────────────────────────────────────────────
+    #  2. CHAT ASSISTANT VIEW
+    # ─────────────────────────────────────────────────────────────
+    def _build_chat_view(self) -> None:
         # Chat Messages Scroll Area
-        self.chat_scroll = ctk.CTkScrollableFrame(self.chat_tab, fg_color="transparent")
-        self.chat_scroll.pack(fill="both", expand=True, padx=4, pady=4)
+        self.chat_scroll = ctk.CTkScrollableFrame(self.view_chat, fg_color="transparent")
+        self.chat_scroll.pack(fill="both", expand=True, padx=10, pady=4)
 
-        # Plan Approval Card Container (Hidden by default)
-        self.plan_card = ctk.CTkFrame(self.chat_tab, fg_color="#1f242c", corner_radius=10, border_width=2, border_color=_ACCENT_CYAN)
+        # Plan Approval Card Container
+        self.plan_card = ctk.CTkFrame(self.view_chat, fg_color="#182230", corner_radius=10, border_width=2, border_color=_ACCENT_CYAN)
 
         self.plan_card_header = ctk.CTkLabel(
             self.plan_card,
@@ -243,15 +376,15 @@ class JarvisApp(ctk.CTk):
             font=ctk.CTkFont(family="Consolas", size=12),
             text_color="#f0f6fc",
             justify="left",
-            wraplength=520,
+            wraplength=620,
         )
         self.plan_text_lbl.pack(anchor="w", padx=14, pady=4)
 
-        self.plan_btn_frame = ctk.CTkFrame(self.plan_card, fg_color="transparent")
-        self.plan_btn_frame.pack(fill="x", padx=14, pady=(6, 10))
+        btn_box = ctk.CTkFrame(self.plan_card, fg_color="transparent")
+        btn_box.pack(fill="x", padx=14, pady=(6, 10))
 
         self.approve_btn = ctk.CTkButton(
-            self.plan_btn_frame,
+            btn_box,
             text="✔ APPROVE & EXECUTE",
             fg_color="#238636",
             hover_color="#2ea043",
@@ -262,7 +395,7 @@ class JarvisApp(ctk.CTk):
         self.approve_btn.pack(side="left", padx=(0, 8))
 
         self.cancel_plan_btn = ctk.CTkButton(
-            self.plan_btn_frame,
+            btn_box,
             text="✖ CANCEL",
             fg_color="#da3633",
             hover_color="#f85149",
@@ -272,166 +405,131 @@ class JarvisApp(ctk.CTk):
         )
         self.cancel_plan_btn.pack(side="left")
 
-        # Input Bar at Bottom
-        self.input_frame = ctk.CTkFrame(self.chat_tab, height=50, fg_color="#121820")
-        self.input_frame.pack(fill="x", side="bottom", padx=4, pady=6)
+        # Chat Input Bar
+        self.input_frame = ctk.CTkFrame(self.view_chat, height=52, fg_color="#121822")
+        self.input_frame.pack(fill="x", side="bottom", padx=10, pady=6)
 
-        # Push-to-Talk Mic Button
-        self.mic_btn = ctk.CTkButton(
-            self.input_frame,
-            text="🎙️ Mic",
-            width=68,
-            height=38,
-            fg_color="#21262d",
-            hover_color="#30363d",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            command=self.on_mic_clicked,
-        )
-        self.mic_btn.pack(side="left", padx=(4, 6))
-
-        # Text input box
         self.text_input = ctk.CTkEntry(
             self.input_frame,
             placeholder_text="Tell Jarvis what to do, or ask 'What is on my screen?'...",
             height=38,
             font=ctk.CTkFont(size=13),
         )
-        self.text_input.pack(side="left", fill="x", expand=True, padx=4)
+        self.text_input.pack(side="left", fill="x", expand=True, padx=6)
         self.text_input.bind("<Return>", lambda e: self.on_send_clicked())
 
-        # Send Button
         self.send_btn = ctk.CTkButton(
             self.input_frame,
             text="Send",
-            width=70,
+            width=75,
             height=38,
             fg_color=_ACCENT_CYAN,
             text_color="#000000",
-            hover_color="#00b0ff",
             font=ctk.CTkFont(size=13, weight="bold"),
             command=self.on_send_clicked,
         )
-        self.send_btn.pack(side="left", padx=(6, 4))
+        self.send_btn.pack(side="left", padx=4)
 
-    def _build_logs_tab(self) -> None:
-        """Action log viewer."""
-        top_ctrl = ctk.CTkFrame(self.logs_tab, fg_color="transparent")
-        top_ctrl.pack(fill="x", padx=10, pady=8)
+    # ─────────────────────────────────────────────────────────────
+    #  3. SCREEN & ACTION CONTROL VIEW
+    # ─────────────────────────────────────────────────────────────
+    def _build_screen_control_view(self) -> None:
+        paned = ctk.CTkFrame(self.view_screen, fg_color="transparent")
+        paned.pack(fill="both", expand=True)
 
-        ctk.CTkLabel(
-            top_ctrl,
-            text="Action Execution Trail (computer_actions.log)",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color="#c9d1d9",
-        ).pack(side="left")
+        # Left Column: Big Screen Preview & Trigger
+        left_col = ctk.CTkFrame(paned, width=380, fg_color=_CARD_BG, corner_radius=12)
+        left_col.pack(side="left", fill="y", padx=(0, 8), pady=4)
+        left_col.pack_propagate(False)
+
+        ctk.CTkLabel(left_col, text="🖥️ LIVE SCREEN VIEW", font=ctk.CTkFont(size=14, weight="bold"), text_color=_ACCENT_CYAN).pack(anchor="w", padx=14, pady=12)
+
+        self.screen_preview_box = ctk.CTkLabel(
+            left_col,
+            text="Click 'Inspect Screen' to capture",
+            width=350,
+            height=200,
+            fg_color="#0d1117",
+            corner_radius=8,
+            text_color="#8b949e",
+        )
+        self.screen_preview_box.pack(padx=14, pady=6)
+
+        self.screen_win_lbl = ctk.CTkLabel(
+            left_col, text="Active Window: Unknown", font=ctk.CTkFont(size=11), text_color="#8b949e", wraplength=340, justify="left"
+        )
+        self.screen_win_lbl.pack(anchor="w", padx=14, pady=(4, 10))
 
         ctk.CTkButton(
-            top_ctrl,
-            text="Clear View",
-            width=80,
-            height=28,
-            fg_color="#21262d",
-            command=self.clear_logs,
-        ).pack(side="right")
-
-        self.log_textbox = ctk.CTkTextbox(
-            self.logs_tab,
-            font=ctk.CTkFont(family="Consolas", size=12),
-            wrap="none",
-            fg_color="#0d1117",
-            text_color="#7ee787",
-        )
-        self.log_textbox.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-
-    def _build_settings_tab(self) -> None:
-        """Settings configuration panel."""
-        scroll = ctk.CTkScrollableFrame(self.settings_tab, fg_color="transparent")
-        scroll.pack(fill="both", expand=True, padx=14, pady=10)
-
-        # Group 1: AI Engine
-        lbl1 = ctk.CTkLabel(scroll, text="🧠 AI Model Settings", font=ctk.CTkFont(size=15, weight="bold"), text_color=_ACCENT_CYAN)
-        lbl1.pack(anchor="w", pady=(8, 12))
-
-        # Provider
-        row0 = ctk.CTkFrame(scroll, fg_color="transparent")
-        row0.pack(fill="x", pady=6)
-        ctk.CTkLabel(row0, text="AI Provider:", width=160, anchor="w").pack(side="left")
-        self.provider_entry = ctk.CTkOptionMenu(row0, values=["Ollama"], width=240)
-        self.provider_entry.set(config.ai_provider)
-        self.provider_entry.pack(side="left")
-
-        # Ollama Host
-        row1 = ctk.CTkFrame(scroll, fg_color="transparent")
-        row1.pack(fill="x", pady=6)
-        ctk.CTkLabel(row1, text="Ollama Endpoint:", width=160, anchor="w").pack(side="left")
-        self.host_entry = ctk.CTkEntry(row1, width=240)
-        self.host_entry.insert(0, config.ollama_host)
-        self.host_entry.pack(side="left")
-
-        # Planning Model
-        row2 = ctk.CTkFrame(scroll, fg_color="transparent")
-        row2.pack(fill="x", pady=6)
-        ctk.CTkLabel(row2, text="Planning Model:", width=160, anchor="w").pack(side="left")
-        self.model_entry = ctk.CTkEntry(row2, width=240)
-        self.model_entry.insert(0, config.model_name)
-        self.model_entry.pack(side="left")
-
-        # Vision Model
-        row3 = ctk.CTkFrame(scroll, fg_color="transparent")
-        row3.pack(fill="x", pady=6)
-        ctk.CTkLabel(row3, text="Vision Model:", width=160, anchor="w").pack(side="left")
-        self.vision_entry = ctk.CTkEntry(row3, width=240)
-        self.vision_entry.insert(0, config.vision_model)
-        self.vision_entry.pack(side="left")
-
-        # Timeout
-        row4 = ctk.CTkFrame(scroll, fg_color="transparent")
-        row4.pack(fill="x", pady=6)
-        ctk.CTkLabel(row4, text="Timeout (seconds):", width=160, anchor="w").pack(side="left")
-        self.timeout_entry = ctk.CTkEntry(row4, width=120)
-        self.timeout_entry.insert(0, str(config.timeout_seconds))
-        self.timeout_entry.pack(side="left")
-
-        # Group 2: Behaviors
-        lbl2 = ctk.CTkLabel(scroll, text="🛡️ Safety & Execution", font=ctk.CTkFont(size=15, weight="bold"), text_color=_ACCENT_CYAN)
-        lbl2.pack(anchor="w", pady=(20, 12))
-
-        self.ask_every_step_switch = ctk.CTkSwitch(scroll, text="Ask confirmation before sensitive actions (Recommended ON)")
-        if config.ask_before_every_action:
-            self.ask_every_step_switch.select()
-        self.ask_every_step_switch.pack(anchor="w", pady=6)
-
-        self.dry_run_switch = ctk.CTkSwitch(scroll, text="Dry-Run Mode (Simulate actions without mouse clicks)")
-        if config.dry_run:
-            self.dry_run_switch.select()
-        self.dry_run_switch.pack(anchor="w", pady=6)
-
-        self.voice_switch = ctk.CTkSwitch(scroll, text="Enable Voice Output (Spoken replies via TTS)")
-        if config.voice_enabled:
-            self.voice_switch.select()
-        self.voice_switch.pack(anchor="w", pady=6)
-
-        # Save Button
-        self.save_btn = ctk.CTkButton(
-            scroll,
-            text="💾 Save Settings",
-            fg_color="#238636",
-            hover_color="#2ea043",
+            left_col,
+            text="👀 What's on my screen?",
             font=ctk.CTkFont(size=13, weight="bold"),
-            command=self.save_settings,
-        )
-        self.save_btn.pack(anchor="w", pady=(24, 10))
+            fg_color="#006699",
+            hover_color="#0088cc",
+            height=36,
+            command=self.worker.describe_current_screen,
+        ).pack(fill="x", padx=14, pady=6)
+
+        # Quick Task Buttons
+        ctk.CTkLabel(left_col, text="⚡ Quick Shortcuts:", font=ctk.CTkFont(size=12, weight="bold"), text_color="#80d8ff").pack(anchor="w", padx=14, pady=(16, 6))
+
+        quick_frame = ctk.CTkFrame(left_col, fg_color="transparent")
+        quick_frame.pack(fill="x", padx=14)
+
+        ctk.CTkButton(quick_frame, text="Notepad", width=75, height=28, command=lambda: self.worker.start_task("open notepad")).pack(side="left", padx=2)
+        ctk.CTkButton(quick_frame, text="Chrome", width=75, height=28, command=lambda: self.worker.start_task("open chrome")).pack(side="left", padx=2)
+        ctk.CTkButton(quick_frame, text="Calculator", width=75, height=28, command=lambda: self.worker.start_task("open calculator")).pack(side="left", padx=2)
+        ctk.CTkButton(quick_frame, text="Calendar", width=75, height=28, command=lambda: self.worker.start_task("open calendar")).pack(side="left", padx=2)
+
+        # Right Column: Action Log & Audit Trail
+        right_col = ctk.CTkFrame(paned, fg_color=_CARD_BG, corner_radius=12)
+        right_col.pack(side="left", fill="both", expand=True, pady=4)
+
+        log_head = ctk.CTkFrame(right_col, fg_color="transparent")
+        log_head.pack(fill="x", padx=14, pady=10)
+
+        ctk.CTkLabel(log_head, text="📜 ACTION AUDIT TRAIL", font=ctk.CTkFont(size=14, weight="bold"), text_color=_ACCENT_CYAN).pack(side="left")
+        ctk.CTkButton(log_head, text="Clear Logs", width=80, height=26, fg_color="#21262d", command=self.clear_logs).pack(side="right")
+
+        self.log_textbox = ctk.CTkTextbox(right_col, font=ctk.CTkFont(family="Consolas", size=12), wrap="none", fg_color="#0a0e14", text_color="#7ee787")
+        self.log_textbox.pack(fill="both", expand=True, padx=14, pady=(0, 14))
 
     # ─────────────────────────────────────────────────────────────
-    #  INTERACTION HANDLERS
+    #  MODE SWITCHING LOGIC
+    # ─────────────────────────────────────────────────────────────
+    def switch_mode(self, mode: str) -> None:
+        """Switch between the 3 clearly separated modes."""
+        self.current_mode = mode
+
+        # Hide all views
+        self.view_voice.pack_forget()
+        self.view_chat.pack_forget()
+        self.view_screen.pack_forget()
+
+        # Reset button styles
+        self.btn_mode_voice.configure(fg_color="#1e2633", text_color="#c9d1d9")
+        self.btn_mode_chat.configure(fg_color="#1e2633", text_color="#c9d1d9")
+        self.btn_mode_screen.configure(fg_color="#1e2633", text_color="#c9d1d9")
+
+        if mode == "voice":
+            self.view_voice.pack(fill="both", expand=True)
+            self.btn_mode_voice.configure(fg_color=_ACCENT_CYAN, text_color="#000000")
+        elif mode == "chat":
+            self.view_chat.pack(fill="both", expand=True)
+            self.btn_mode_chat.configure(fg_color=_ACCENT_CYAN, text_color="#000000")
+        elif mode == "screen":
+            self.view_screen.pack(fill="both", expand=True)
+            self.btn_mode_screen.configure(fg_color=_ACCENT_CYAN, text_color="#000000")
+
+    # ─────────────────────────────────────────────────────────────
+    #  EVENT HANDLERS & CALLBACKS
     # ─────────────────────────────────────────────────────────────
     def update_status(self, state: str) -> None:
-        """Update status line with color-coded dot."""
         colors = {
             "Idle": _ACCENT_GREEN,
-            "Listening": "#e040fb",
+            "Listening": _ACCENT_MAGENTA,
             "Looking at screen": _ACCENT_CYAN,
-            "Thinking": "#ffd600",
+            "Thinking": _ACCENT_GOLD,
             "Waiting for your approval": "#ff9100",
             "Acting": "#ff6d00",
             "Stopped": _ACCENT_RED,
@@ -439,26 +537,9 @@ class JarvisApp(ctk.CTk):
         color = colors.get(state, "#8b949e")
         self.status_dot.configure(text_color=color)
         self.status_lbl.configure(text=state)
-
-        # Animate mic button if listening
-        if state == "Listening":
-            self.is_listening = True
-            self._pulse_mic()
-        else:
-            self.is_listening = False
-            self.mic_btn.configure(fg_color="#21262d")
-
-    def _pulse_mic(self) -> None:
-        if not self.is_listening:
-            self.mic_btn.configure(fg_color="#21262d")
-            return
-        colors = ["#b388ff", "#7c4dff", "#651fff", "#7c4dff"]
-        self._mic_pulse_step = (self._mic_pulse_step + 1) % len(colors)
-        self.mic_btn.configure(fg_color=colors[self._mic_pulse_step])
-        self.after(250, self._pulse_mic)
+        self.logo_canvas.set_state(state)
 
     def add_chat_message(self, sender: str, text: str) -> None:
-        """Append a message bubble to the chat scroll view."""
         is_user = sender.lower() == "you"
         frame_bg = _USER_BUBBLE if is_user else _JARVIS_BUBBLE
         align = "e" if is_user else "w"
@@ -470,29 +551,31 @@ class JarvisApp(ctk.CTk):
         bubble = ctk.CTkFrame(bubble_container, fg_color=frame_bg, corner_radius=12)
         bubble.pack(side="right" if is_user else "left", padx=padx_side, pady=2)
 
-        sender_lbl = ctk.CTkLabel(
+        ctk.CTkLabel(
             bubble,
             text=sender,
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color=_ACCENT_CYAN if not is_user else "#a5d6ff",
-        )
-        sender_lbl.pack(anchor="w", padx=12, pady=(6, 2))
+        ).pack(anchor="w", padx=12, pady=(6, 2))
 
-        msg_lbl = ctk.CTkLabel(
+        ctk.CTkLabel(
             bubble,
             text=text,
             font=ctk.CTkFont(size=13),
             text_color="#f0f6fc",
             justify="left",
-            wraplength=480,
-        )
-        msg_lbl.pack(anchor="w", padx=12, pady=(0, 8))
+            wraplength=500,
+        ).pack(anchor="w", padx=12, pady=(0, 8))
 
-        # Auto-scroll to bottom
+        # Also update Voice HUD card
+        if is_user:
+            self.voice_user_text.configure(text=f"You: {text}")
+        else:
+            self.voice_jarvis_text.configure(text=f"Jarvis: {text[:140]}...")
+
         self.after(50, lambda: self.chat_scroll._parent_canvas.yview_moveto(1.0))
 
     def show_plan_card(self, plan_text: str, is_risky: bool) -> None:
-        """Display the proposed plan card with Approve and Cancel buttons."""
         if is_risky:
             self.plan_card.configure(border_color=_ACCENT_RED)
             self.plan_card_header.configure(text="⚠️ RISKY ACTION PLAN — CONFIRMATION REQUIRED", text_color=_ACCENT_RED)
@@ -502,31 +585,24 @@ class JarvisApp(ctk.CTk):
 
         self.plan_text_lbl.configure(text=plan_text)
         self.plan_card.pack(fill="x", padx=10, pady=8, before=self.input_frame)
-        self.approve_btn.configure(state="normal")
-        self.cancel_plan_btn.configure(state="normal")
 
     def on_plan_decision(self, approved: bool) -> None:
-        """Handle Approve/Cancel button click."""
-        self.approve_btn.configure(state="disabled")
-        self.cancel_plan_btn.configure(state="disabled")
         self.plan_card.pack_forget()
         self.worker.approve_plan(approved)
 
     def update_screenshot_preview(self, img_bytes: bytes, window_title: str) -> None:
-        """Update the sidebar screenshot thumbnail."""
         try:
             pil_img = Image.open(io.BytesIO(img_bytes))
-            pil_img.thumbnail((236, 134), Image.LANCZOS)
+            pil_img.thumbnail((350, 195), Image.LANCZOS)
             self._thumbnail_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=pil_img.size)
-            self.preview_lbl.configure(image=self._thumbnail_img, text="")
-            self.win_title_lbl.configure(text=f"Active: {window_title[:38]}...")
+            self.screen_preview_box.configure(image=self._thumbnail_img, text="")
+            self.screen_win_lbl.configure(text=f"Active: {window_title[:45]}...")
         except Exception as e:
             print(f"Thumbnail error: {e}")
 
     def append_log_entry(self, timestamp: str, step: int, action: str, result: str, success: bool) -> None:
-        """Append log line to Action Log tab."""
         stat = "PASS" if success else "FAIL"
-        entry = f"[{timestamp}] Step {step:<2} | {stat} | {action:<14} -> {result}\n"
+        entry = f"[{timestamp}] Step {step:<2} | {stat} | {action:<16} -> {result}\n"
         self.log_textbox.insert("end", entry)
         self.log_textbox.see("end")
 
@@ -534,44 +610,25 @@ class JarvisApp(ctk.CTk):
         self.log_textbox.delete("1.0", "end")
 
     def on_send_clicked(self) -> None:
-        """Triggered by clicking Send or pressing Enter."""
         text = self.text_input.get().strip()
         if not text:
             return
         self.text_input.delete(0, "end")
-        self.send_btn.configure(state="disabled")
-
-        if text.lower() in ["what is on my screen", "what's on my screen", "describe screen"]:
-            self.worker.describe_current_screen()
-            self.send_btn.configure(state="normal")
-            return
-
         self.worker.start_task(text)
 
-    def on_mic_clicked(self) -> None:
-        """Trigger push-to-talk voice input."""
-        def _on_text(spoken_text: str):
-            self.after(0, lambda: self._handle_voice_input(spoken_text))
+    def on_voice_talk_clicked(self) -> None:
+        """Triggered from Talking Mode center button."""
+        def _on_heard(spoken: str):
+            self.after(0, lambda: self.worker.start_task(spoken))
 
-        self.worker.record_voice(_on_text)
-
-    def _handle_voice_input(self, text: str) -> None:
-        if not text:
-            return
-        self.text_input.delete(0, "end")
-        self.text_input.insert(0, text)
-        self.on_send_clicked()
-
-    def on_inspect_screen_clicked(self) -> None:
-        self.worker.describe_current_screen()
+        self.worker.record_voice(_on_heard)
 
     def on_emergency_stop_clicked(self) -> None:
         self.worker.stop()
         self.plan_card.pack_forget()
-        self.send_btn.configure(state="normal")
 
     def on_task_completed(self) -> None:
-        self.send_btn.configure(state="normal")
+        pass
 
     def toggle_always_on_top(self) -> None:
         is_top = bool(self.topmost_switch.get())
@@ -579,73 +636,13 @@ class JarvisApp(ctk.CTk):
         config.always_on_top = is_top
         config.save()
 
-    def save_settings(self) -> None:
-        """Save settings from tab into config singleton and disk."""
-        config.ai_provider = self.provider_entry.get()
-        config.ollama_host = self.host_entry.get().strip()
-        config.model_name = self.model_entry.get().strip()
-        config.vision_model = self.vision_entry.get().strip()
-        try:
-            config.timeout_seconds = int(self.timeout_entry.get().strip())
-        except ValueError:
-            config.timeout_seconds = 120
-
-        config.ask_before_every_action = bool(self.ask_every_step_switch.get())
-        config.dry_run = bool(self.dry_run_switch.get())
-        config.voice_enabled = bool(self.voice_switch.get())
-        config.save()
-
-        self.save_btn.configure(text="✅ Saved Successfully!")
-        self.after(2000, lambda: self.save_btn.configure(text="💾 Save Settings"))
-
-    # ─────────────────────────────────────────────────────────────
-    #  SYSTEM TRAY SUPPORT
-    # ─────────────────────────────────────────────────────────────
-    def _setup_system_tray(self) -> None:
-        try:
-            import pystray
-            from pystray import MenuItem as item
-
-            # Generate default cyan dot icon
-            icon_img = Image.new("RGBA", (32, 32), color=(13, 17, 23, 255))
-            from PIL import ImageDraw
-            d = ImageDraw.Draw(icon_img)
-            d.ellipse((4, 4, 28, 28), fill=(0, 229, 255, 255))
-
-            menu = (
-                item("Show Jarvis", self._show_from_tray, default=True),
-                item("Quit", self._quit_app),
-            )
-            self.tray_icon = pystray.Icon("jarvis_tray", icon_img, "Jarvis Screen Assistant", menu)
-
-            # Protocol for minimizing to tray on window close
-            self.protocol("WM_DELETE_WINDOW", self._minimize_to_tray)
-        except Exception:
-            self.tray_icon = None
-
-    def _minimize_to_tray(self) -> None:
-        if self.tray_icon:
-            self.withdraw()
-            t = threading.Thread(target=self.tray_icon.run, daemon=True)
-            t.start()
-        else:
-            self.destroy()
-
-    def _show_from_tray(self, icon=None, item=None) -> None:
-        if self.tray_icon:
-            self.tray_icon.stop()
-        self.after(0, self.deiconify)
-
-    def _quit_app(self, icon=None, item=None) -> None:
-        if self.tray_icon:
-            self.tray_icon.stop()
-        self.worker._exit_listener = True
-        self.destroy()
-        sys.exit(0)
-
 
 def main():
-    app = JarvisApp()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", choices=["voice", "chat", "screen"], default="voice")
+    args = parser.parse_args()
+
+    app = JarvisApp(start_mode=args.mode)
     app.mainloop()
 
 

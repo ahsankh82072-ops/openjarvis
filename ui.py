@@ -189,7 +189,7 @@ class JarvisApp(ctk.CTk):
         self.switch_mode(start_mode)
 
         # Initial greet
-        self.add_chat_message("Jarvis", "Jarvis online and ready, sir. Speak aloud or choose any mode above.")
+        self.add_chat_message("Jarvis", "⚡ J.A.R.V.I.S. online with Google Gemini 3.1 Cloud AI, sir. Speak aloud or choose any mode above.")
 
     def _thread_safe(self, func):
         def _wrapper(*args, **kwargs):
@@ -203,13 +203,27 @@ class JarvisApp(ctk.CTk):
         self.header_frame = ctk.CTkFrame(self, height=58, corner_radius=0, fg_color="#0e141d")
         self.header_frame.pack(fill="x", side="top")
 
-        # Logo
+        # Logo & AI Engine Badge
+        logo_box = ctk.CTkFrame(self.header_frame, fg_color="transparent")
+        logo_box.pack(side="left", padx=12, pady=8)
+
         ctk.CTkLabel(
-            self.header_frame,
+            logo_box,
             text="⚡ J.A.R.V.I.S.",
-            font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"),
+            font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
             text_color=_ACCENT_CYAN,
-        ).pack(side="left", padx=16, pady=10)
+        ).pack(side="left", padx=(0, 6))
+
+        ctk.CTkLabel(
+            logo_box,
+            text="✨ Gemini Cloud",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color="#80d8ff",
+            fg_color="#102a45",
+            corner_radius=6,
+            padx=6,
+            pady=2,
+        ).pack(side="left")
 
         # Status Dot & Label
         self.status_container = ctk.CTkFrame(self.header_frame, fg_color="#151e2b", corner_radius=14)

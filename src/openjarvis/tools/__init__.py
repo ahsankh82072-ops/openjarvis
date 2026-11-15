@@ -183,4 +183,21 @@ try:
 except ImportError:
     pass
 
+# ── screen-control tools (added on branch screen-control) ──────────────────
+try:
+    import openjarvis.tools.screen_capture  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.describe_screen  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.computer_action  # noqa: F401
+except ImportError:
+    pass
+# ── end screen-control ──────────────────────────────────────────────────────
+
 __all__ = ["BaseTool", "ToolExecutor", "ToolSpec"]

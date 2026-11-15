@@ -13,7 +13,10 @@ _CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis_
 
 @dataclass
 class JarvisConfig:
-    ai_provider: str = "Ollama"
+    ai_provider: str = "Gemini Cloud (with Ollama Fallback)"
+    gemini_api_key: str = "AQ.Ab8RN6KQkLoVJNZMGLAPhEHftV-MmW-NE94xPxBHXZccwcuGIA"
+    gemini_model: str = "gemini-3.1-flash-lite"
+    use_gemini_cloud: bool = True
     ollama_host: str = "http://localhost:11434"
     model_name: str = "phi3:mini"
     vision_model: str = "moondream"

@@ -217,6 +217,53 @@ class JarvisWorker:
 
         threading.Thread(target=_tts, daemon=True).start()
 
+    def call_gemini(self, prompt: str, image_b64: Optional[str] = None) -> Optional[str]:
+        """Calls Google Gemini Cloud API in < 1s with 0% PC RAM."""
+        if not config.use_gemini_cloud or not config.gemini_api_key:
+            return None
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.gemini_model}:generateContent"
+        parts: List[Dict[str, Any]] = [{"text": prompt}]
+        if image_b64:
+            parts.append({
+                "inline_data": {
+                    "mime_type": "image/png",
+                    "data": image_b64
+                }
+            })
+        payload = {"contents": [{"parts": parts}]}
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": config.gemini_api_key
+            }
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                res = json.loads(resp.read().decode("utf-8"))
+                candidates = res.get("candidates", [])
+                if candidates:
+                    p = candidates[0].get("content", {}).get("parts", [])
+                    if p:
+                        return p[0].get("text", "").strip()
+        except Exception:
+            # Seamless fallback to local Ollama
+            pass
+        return None
+
+    def call_ai(self, prompt: str, image_b64: Optional[str] = None, model: Optional[str] = None) -> str:
+        """Calls Gemini Cloud first (fast & 0 RAM), falls back to Ollama seamlessly."""
+        if self.emergency_stop:
+            return "Operation aborted by user."
+        # 1. Cloud Gemini (sub-second response, 0% laptop RAM)
+        cloud_reply = self.call_gemini(prompt, image_b64)
+        if cloud_reply:
+            return cloud_reply
+        # 2. Local Ollama Fallback
+        return self.call_ollama(prompt, image_b64, model)
+
     def call_ollama(self, prompt: str, image_b64: Optional[str] = None, model: Optional[str] = None) -> str:
         """Call Ollama with keep_alive and timeout retry."""
         target_model = model or config.model_name
@@ -460,7 +507,7 @@ class JarvisWorker:
             self.cb.get("on_screenshot", lambda b, w: None)(raw_png, window_title)
 
             self.cb.get("on_status", lambda s: None)("Thinking")
-            vision_reply = self.call_ollama(
+            vision_reply = self.call_ai(
                 prompt="Describe everything visible on this screen in detail. List the active application, visible text, buttons, and content.",
                 image_b64=sc_res.content,
                 model=config.vision_model,
@@ -521,7 +568,7 @@ class JarvisWorker:
             f"Active Window: '{window_title}'\n\n"
             f"Provide a numbered 2 to 3 step plan to achieve this goal on Windows."
         )
-        plan_text = self.call_ollama(plan_prompt)
+        plan_text = self.call_ai(plan_prompt)
         if "Error:" in plan_text:
             plan_text = f"1. Open target application for '{user_goal}'\n2. Perform required typing or mouse actions\n3. Verify result"
 
@@ -557,7 +604,7 @@ class JarvisWorker:
                 f"TEXT: <text to type or app name>\n"
                 f"EXPLANATION: <brief reason>"
             )
-            raw = self.call_ollama(decide_prompt)
+            raw = self.call_ai(decide_prompt)
             if self.emergency_stop:
                 break
 

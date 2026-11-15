@@ -65,8 +65,96 @@ class JarvisWorker:
         self.action_tool = ComputerActionTool()
 
         self._exit_listener = False
+        self._is_speaking = False
         self.hotkey_thread = threading.Thread(target=self._hotkey_listener, daemon=True)
         self.hotkey_thread.start()
+
+        # Always-on Background Voice Listener (Listens even when minimized or in background!)
+        self.bg_mic_thread = threading.Thread(target=self._bg_voice_listener, daemon=True)
+        self.bg_mic_thread.start()
+
+    def _bg_voice_listener(self) -> None:
+        """
+        Continuous background microphone listener that listens for 'Hey Jarvis' or 'Jarvis'
+        even when the window is minimized or behind other applications.
+        """
+        try:
+            import speech_recognition as sr
+        except ImportError:
+            return
+
+        recognizer = sr.Recognizer()
+        recognizer.dynamic_energy_threshold = False
+        recognizer.pause_threshold = 0.8
+        recognizer.phrase_threshold = 0.2
+        recognizer.non_speaking_duration = 0.4
+
+        try:
+            with sr.Microphone() as source:
+                recognizer.adjust_for_ambient_noise(source, duration=0.8)
+                recognizer.energy_threshold = max(35.0, min(recognizer.energy_threshold, 65.0))
+        except Exception:
+            recognizer.energy_threshold = 150.0
+
+        wake_regex = re.compile(
+            r'\b(hey|hay|hi|hello|ok|yo|ai|wake\s+up)?\s*(jarvis|javis|jarves|jervis|travis|service|chavez|jar|java)\b',
+            re.IGNORECASE
+        )
+
+        is_awake = False
+        awake_until = 0.0
+
+        while not self._exit_listener:
+            if self._is_speaking or self.emergency_stop:
+                time.sleep(0.3)
+                continue
+
+            try:
+                with sr.Microphone() as source:
+                    audio = recognizer.listen(source, timeout=4, phrase_time_limit=9)
+            except Exception:
+                continue
+
+            if self._is_speaking or self.emergency_stop:
+                continue
+
+            try:
+                text = recognizer.recognize_google(audio).strip()
+            except Exception:
+                continue
+
+            if not text:
+                continue
+
+            lower = text.lower().strip()
+
+            # Check if previous awake window expired
+            if is_awake and time.time() > awake_until:
+                is_awake = False
+
+            # Case 1: Wake word detected (e.g. "Hey Jarvis open notepad" or just "Hey Jarvis")
+            if wake_regex.search(lower):
+                rest = wake_regex.sub('', lower).strip(" ,:!?.")
+                rest = re.sub(r'^(?:and|also|then|please|can you|could you|now)\s+', '', rest).strip()
+                if not rest:
+                    # User said only "Hey Jarvis"
+                    is_awake = True
+                    awake_until = time.time() + 25.0
+                    self.cb.get("on_status", lambda s: None)("Listening")
+                    self.cb.get("on_chat", lambda s, t: None)("You", text)
+                    self.cb.get("on_chat", lambda s, t: None)("Jarvis", "Yes, sir? How may I assist you?")
+                    self._speak("Yes, sir? How may I assist you?")
+                else:
+                    # User said "Hey Jarvis [command]" in one breath
+                    is_awake = True
+                    awake_until = time.time() + 25.0
+                    self.start_task(rest)
+                continue
+
+            # Case 2: Already awake within the 25-second window -> direct command
+            if is_awake:
+                awake_until = time.time() + 25.0
+                self.start_task(lower)
 
     def _hotkey_listener(self) -> None:
         """Global emergency stop listener: Ctrl+Alt+Q."""
@@ -111,6 +199,7 @@ class JarvisWorker:
             return
 
         def _tts():
+            self._is_speaking = True
             try:
                 import pyttsx3
                 engine = pyttsx3.init()
@@ -122,6 +211,9 @@ class JarvisWorker:
                     engine.runAndWait()
             except Exception:
                 pass
+            finally:
+                time.sleep(0.3)
+                self._is_speaking = False
 
         threading.Thread(target=_tts, daemon=True).start()
 

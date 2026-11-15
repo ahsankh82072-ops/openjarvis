@@ -78,15 +78,15 @@ class HoveringJarvisLogo(ctk.CTkCanvas):
         if self.state == "Listening":
             core_color = _ACCENT_MAGENTA
             ring_color = "#ea80fc"
-            status_text = "🎙️ LISTENING..."
+            status_text = "🎙️ LISTENING"
         elif self.state == "Thinking":
             core_color = _ACCENT_GOLD
             ring_color = "#ffe57f"
-            status_text = "🧠 THINKING..."
+            status_text = "🧠 THINKING"
         elif self.state == "Acting":
             core_color = "#ff6d00"
             ring_color = "#ffab40"
-            status_text = "⚡ ACTING..."
+            status_text = "⚡ ACTING"
         elif self.state == "Stopped":
             core_color = _ACCENT_RED
             ring_color = "#ff8a80"
@@ -137,9 +137,9 @@ class HoveringJarvisLogo(ctk.CTkCanvas):
         # 6. Central Brand Text
         self.create_text(
             cx, cy - 2,
-            text="J.A.R.V.I.S.",
+            text="JARVIS",
             fill="#ffffff",
-            font=("Segoe UI", 11, "bold")
+            font=("Segoe UI", 12, "bold")
         )
 
         # 7. Bottom Status Caption
@@ -159,7 +159,7 @@ class JarvisApp(ctk.CTk):
     def __init__(self, start_mode: str = "voice") -> None:
         super().__init__()
 
-        self.title("J.A.R.V.I.S. — Autonomous Screen Assistant")
+        self.title("Jarvis — Autonomous Screen Assistant")
         self.geometry("1040x740")
         self.minsize(880, 620)
         self.configure(fg_color=_BG_DARK)
@@ -188,9 +188,6 @@ class JarvisApp(ctk.CTk):
         # Switch to the requested initial mode
         self.switch_mode(start_mode)
 
-        # Initial greet
-        self.add_chat_message("Jarvis", "⚡ J.A.R.V.I.S. online with Google Gemini 3.1 Cloud AI, sir. Speak aloud or choose any mode above.")
-
     def _thread_safe(self, func):
         def _wrapper(*args, **kwargs):
             self.after(0, lambda: func(*args, **kwargs))
@@ -209,7 +206,7 @@ class JarvisApp(ctk.CTk):
 
         ctk.CTkLabel(
             logo_box,
-            text="⚡ J.A.R.V.I.S.",
+            text="⚡ JARVIS",
             font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
             text_color=_ACCENT_CYAN,
         ).pack(side="left", padx=(0, 6))
@@ -347,7 +344,7 @@ class JarvisApp(ctk.CTk):
 
         self.voice_user_text = ctk.CTkLabel(
             self.voice_card,
-            text="You: Speak a command like 'open youtube and play music' or 'what is on my screen'...",
+            text="You: Press and speak or say 'Hey Jarvis'",
             font=ctk.CTkFont(size=13, weight="bold"),
             text_color="#80d8ff",
             wraplength=600,
@@ -357,7 +354,7 @@ class JarvisApp(ctk.CTk):
 
         self.voice_jarvis_text = ctk.CTkLabel(
             self.voice_card,
-            text="Jarvis: Standing by for your instructions, sir.",
+            text="Jarvis: Standing by for your instructions, sir",
             font=ctk.CTkFont(size=13),
             text_color="#c9d1d9",
             wraplength=600,
@@ -425,7 +422,7 @@ class JarvisApp(ctk.CTk):
 
         self.text_input = ctk.CTkEntry(
             self.input_frame,
-            placeholder_text="Tell Jarvis what to do, or ask 'What is on my screen?'...",
+            placeholder_text="Tell Jarvis what to do, or ask 'What is on my screen?'",
             height=38,
             font=ctk.CTkFont(size=13),
         )
@@ -585,9 +582,9 @@ class JarvisApp(ctk.CTk):
 
         # Also update Voice HUD card
         if is_user:
-            self.voice_user_text.configure(text=f"You: {text}")
+            self.voice_user_text.configure(text=f"You: {text.strip().rstrip('.')}")
         else:
-            self.voice_jarvis_text.configure(text=f"Jarvis: {text[:140]}...")
+            self.voice_jarvis_text.configure(text=f"Jarvis: {text.strip().rstrip('.')}")
 
         self.after(50, lambda: self.chat_scroll._parent_canvas.yview_moveto(1.0))
 
@@ -612,7 +609,8 @@ class JarvisApp(ctk.CTk):
             pil_img.thumbnail((350, 195), Image.LANCZOS)
             self._thumbnail_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=pil_img.size)
             self.screen_preview_box.configure(image=self._thumbnail_img, text="")
-            self.screen_win_lbl.configure(text=f"Active: {window_title[:45]}...")
+            clean_title = window_title.strip().rstrip(".")
+            self.screen_win_lbl.configure(text=f"Active: {clean_title[:60]}")
         except Exception as e:
             print(f"Thumbnail error: {e}")
 

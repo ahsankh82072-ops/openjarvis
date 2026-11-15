@@ -1,75 +1,69 @@
-# Jarvis Desktop Screen Assistant (GUI)
+# J.A.R.V.I.S. — Autonomous Desktop Screen Assistant (GUI)
 
-A modern dark graphical interface for the OpenJarvis screen-seeing and PC control assistant.
-
----
-
-## 🚀 How to Run
-
-### Method 1: Double-Click Desktop Shortcut
-- Double-click **`Jarvis_Desktop_App.bat`** on your desktop.
-
-### Method 2: Command Line
-```powershell
-cd C:\Users\ASC\.gemini\antigravity\scratch\OpenJarvis
-python ui.py
-```
-
-### Fallback: Working Console Version
-If you ever want the original console mode, it is kept safe:
-```powershell
-python screen_assistant.py
-# or with voice:
-python screen_assistant.py --voice
-```
+A high-tech, dark-themed graphical interface for OpenJarvis with 3 distinct operational modes, real-time vision, PC control, and autonomous fast-path execution.
 
 ---
 
-## 🎛️ App Features & Buttons
+## 🚀 3 Separated Modes
 
-| Control / Area | Description |
+The interface has 3 dedicated screens accessible via the top navigation bar:
+
+1. **🎙️ Voice Talking Mode**
+   - **Central Hovering Iron Man Arc-Reactor HUD**: Floating, rotating holographic core that reacts visually to speech.
+   - **State-Reactive Animations**:
+     - 🟣 Cyan / Blue = Standby / Idle
+     - 🟣 Magenta Pulsing = Listening to your microphone
+     - 🟡 Gold Rotating = Thinking / Processing
+     - 🟠 Orange = Autonomous PC action in progress
+     - 🔴 Red = Emergency stop
+   - **Big Push-to-Talk Button**: Press and speak any command.
+   - **Live Dialogue Display**: Real-time transcript of what you said and Jarvis's spoken reply.
+
+2. **💬 Chat Assistant**
+   - **Messaging Stream**: Conversational bubble interface with complete chat history.
+   - **Plan Approval Card**: Interactive card with large **[APPROVE & EXECUTE]** and **[CANCEL]** buttons for complex multi-step plans. Risky actions (send/delete/pay) are highlighted in red.
+   - **Direct Input Bar**: Type any instruction and press Enter or Send.
+
+3. **🖥️ Screen Control & Action Audit**
+   - **Live Screen Thumbnail**: Real-time preview of the captured screen and active window title.
+   - **👀 "What's on my screen?" Button**: Instant 1-click vision analysis powered by local vision model (`moondream`).
+   - **Quick App Shortcuts**: 1-click launch for Notepad, Chrome, Calculator, and Calendar.
+   - **Action Audit Log**: Detailed chronological execution log of every step, tool, and outcome.
+
+---
+
+## ⚡ Instant Fast-Path Execution (< 1 Second)
+
+Common tasks bypass slow LLM generation and execute immediately:
+- **YouTube Playback**: *"open youtube and play mrbeast recent video"*, *"play despacito on youtube"*
+- **App Launching**: *"open notepad"*, *"open calculator"*, *"open chrome"*, *"open calendar"*
+- **Website Navigation**: *"open amazon.com"*, *"go to reddit"*, *"visit github"*
+- **Calendar & Meetings**: *"schedule a meeting with doctor tomorrow"* (opens pre-filled Google Calendar)
+- **Screen Inspection**: *"what is on my screen"*, *"describe screen"*, *"summarize this page"*
+- **Volume & Media**: *"volume up"*, *"volume down"*, *"mute"*
+- **Google Search**: *"search weather in new york"*, *"google latest news"*
+
+---
+
+## 🖥️ Desktop Launchers
+
+On your Desktop (`D:\OneDrive\Desktop\`):
+
+| Launcher | What it Opens |
 |---|---|
-| **Chat Area** | Shows user commands and Jarvis responses in conversational bubbles. |
-| **Input Bar & Send** | Type any request and press Enter or click Send. |
-| **🎙️ Mic Button** | Push-to-talk voice input with pulsing animation while listening. |
-| **Status Badge** | Real-time state: `Idle` (Green), `Looking at screen` (Cyan), `Thinking` (Yellow), `Waiting for your approval` (Orange), `Acting` (Orange-Red), `Stopped` (Red). |
-| **📋 Plan Card** | Appears when Jarvis proposes steps. Features large **[APPROVE & EXECUTE]** and **[CANCEL]** buttons. Risky actions (send/delete/pay) are highlighted in red. |
-| **Screen Preview** | Displays a live thumbnail of the last screen captured and active window title. |
-| **👀 What's on my screen?** | Instant 1-click screen analysis using local vision model (`moondream`). |
-| **🚨 Emergency STOP Button** | Always visible in red at the top right. Instantly halts all mouse and keyboard actions (same as pressing **Ctrl + Alt + Q**). |
-| **Pin on Top** | Keeps the Jarvis window floating above other applications. |
-| **System Tray** | Minimizes to system tray on close; right-click tray icon to Restore or Quit. |
-| **Action Log Tab** | Complete chronological audit log of every step, tool, and result. |
-| **Settings Tab** | Configure model, Ollama endpoint, timeout (default 120s), voice on/off, dry-run on/off. |
+| **`Jarvis.exe`** | Standalone double-click executable (no terminal required) |
+| **`Jarvis_Voice_Mode.bat`** | Opens directly into the Voice Talking Mode with hovering HUD |
+| **`Jarvis_Chat_Mode.bat`** | Opens directly into the Chat Assistant Mode |
+| **`Jarvis_Screen_Control.bat`**| Opens directly into Screen Control & Vision Mode |
+| **`Jarvis_Desktop_App.bat`** | Launches the GUI desktop application |
+| **`Run_OpenJarvis_ScreenAssistant.bat`** | Console fallback mode |
 
 ---
 
-## 💡 5 Example Commands to Try
+## 🛑 Safety & Emergency Stop
 
-1. **`what is on my screen`**  
-   *(Jarvis takes a screenshot, passes it to moondream, and describes all open windows and content)*
-2. **`summarise this page`**  
-   *(Jarvis analyzes your active document or browser page and summarizes it)*
-3. **`open notepad and type meeting notes`**  
-   *(Jarvis formulates a plan, waits for your click on [APPROVE], opens Notepad, and types the text)*
-4. **`open chrome and go to youtube.com`**  
-   *(Jarvis proposes opening YouTube, waits for your approval, and navigates there)*
-5. **`scroll down and check what changed`**  
-   *(Jarvis scrolls the active window, takes another screenshot, and reports)*
-
----
-
-## 📦 How to Package into a Single .EXE (PyInstaller)
-
-To bundle Jarvis into a standalone Windows `.exe` application:
-
-1. Install PyInstaller:
-   ```powershell
-   pip install pyinstaller
-   ```
-2. Build the `.exe` from the OpenJarvis directory:
-   ```powershell
-   cd C:\Users\ASC\.gemini\antigravity\scratch\OpenJarvis
-   pyinstaller --noconsole --onefile --name "Jarvis" --collect-all customtkinter ui.py
-   ```
-3. Your standalone executable will be generated in `C:\Users\ASC\.gemini\antigravity\scratch\OpenJarvis\dist\Jarvis.exe`.
+- **Big Red STOP Button**: Top right header, always visible. Halts all keyboard/mouse actions immediately.
+- **Global Hotkey**: Press **Ctrl + Alt + Q** anywhere in Windows to trigger emergency abort.
+- **Mouse Corner Failsafe**: Slam the mouse into any screen corner to trigger PyAutoGUI failsafe.
+- **Sensitive Keywords Guard**: Passwords, OTP codes, credit card numbers, and banking terms are blocked from typing.
+- **15-Step Limit**: Prevents infinite loops or runaway processes.

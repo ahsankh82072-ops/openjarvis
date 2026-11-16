@@ -48,6 +48,12 @@ class JarvisConfig:
     ask_before_every_action: bool = False
     full_pc_control: bool = True
     always_on_top: bool = False
+    # Gemini Live API Settings
+    gemini_live_model: str = "gemini-2.0-flash-live-001"
+    live_voice: str = "Puck"
+    live_language: str = "en"
+    live_screen_share: bool = False
+    live_ptt_hotkey: str = "ctrl+space"
     max_steps: int = 5
     gmail_address: str = ""
     gmail_app_password: str = ""

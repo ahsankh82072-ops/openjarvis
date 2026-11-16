@@ -27,6 +27,8 @@ if _APP_DIR not in sys.path:
 
 from config import config
 from worker import JarvisWorker
+from gemini_live_engine import GeminiLiveEngine
+from live_ui_panel import GeminiLivePanel
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -189,6 +191,15 @@ class JarvisApp(ctk.CTk):
             }
         )
 
+        self.live_engine = GeminiLiveEngine(
+            callbacks={
+                "on_status": self._thread_safe(self.update_status),
+                "on_chat": self._thread_safe(self.add_chat_message),
+                "on_log": self._thread_safe(self.append_log_entry),
+            }
+        )
+        self.live_panel: Optional[GeminiLivePanel] = None
+
         self.current_mode = start_mode
         self._thumbnail_img: Optional[ctk.CTkImage] = None
 
@@ -290,6 +301,22 @@ class JarvisApp(ctk.CTk):
             command=lambda: self.switch_mode("screen"),
         )
         self.btn_mode_screen.pack(side="left", padx=3, pady=3)
+
+        self.btn_mode_live = ctk.CTkButton(
+            self.mode_frame,
+            text="⚡ Live",
+            width=82,
+            height=30,
+            corner_radius=14,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color="#102538",
+            border_color=_ACCENT_CYAN,
+            border_width=1,
+            text_color=_ACCENT_CYAN,
+            hover_color="#1c3b54",
+            command=self.open_live_panel,
+        )
+        self.btn_mode_live.pack(side="left", padx=3, pady=3)
 
         self.btn_mode_settings = ctk.CTkButton(
             self.mode_frame,
@@ -847,6 +874,110 @@ class JarvisApp(ctk.CTk):
             command=lambda: self.worker.start_task("open whatsapp"),
         ).pack(side="left")
 
+        # ── 4b. GEMINI LIVE & AI PROVIDER SETTINGS ───────────────
+        live_card = ctk.CTkFrame(self.view_settings, fg_color=_CARD_BG, corner_radius=12)
+        live_card.pack(fill="x", padx=16, pady=6)
+
+        l_head = ctk.CTkFrame(live_card, fg_color="transparent")
+        l_head.pack(fill="x", padx=16, pady=(12, 4))
+
+        ctk.CTkLabel(
+            l_head,
+            text="⚡ Gemini Live Voice & Vision Settings",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=_ACCENT_CYAN,
+        ).pack(side="left")
+
+        ctk.CTkButton(
+            l_head,
+            text="⚡ Launch Live Floating HUD",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            height=26,
+            fg_color="#006699",
+            hover_color="#0088cc",
+            command=self.open_live_panel,
+        ).pack(side="right")
+
+        ctk.CTkLabel(
+            live_card,
+            text="Gemini Live enables natural continuous voice conversations, automatic screen viewing, and real-time interruption.",
+            font=ctk.CTkFont(size=12),
+            text_color="#8b949e",
+            wraplength=720,
+            justify="left",
+        ).pack(anchor="w", padx=16, pady=(0, 8))
+
+        l_inputs = ctk.CTkFrame(live_card, fg_color="transparent")
+        l_inputs.pack(fill="x", padx=16, pady=4)
+
+        # AI Provider choice
+        ctk.CTkLabel(l_inputs, text="Primary AI Provider:", width=140, anchor="w", font=ctk.CTkFont(size=12)).grid(row=0, column=0, pady=4, sticky="w")
+        self.ai_provider_opt = ctk.CTkOptionMenu(
+            l_inputs,
+            values=["Gemini Live (Voice + Vision)", "Gemini Cloud (Standard)", "Ollama (Local Offline)"],
+            width=260,
+        )
+        self.ai_provider_opt.grid(row=0, column=1, padx=8, pady=4, sticky="w")
+        if "live" in (config.ai_provider or "").lower():
+            self.ai_provider_opt.set("Gemini Live (Voice + Vision)")
+        elif "ollama" in (config.ai_provider or "").lower():
+            self.ai_provider_opt.set("Ollama (Local Offline)")
+        else:
+            self.ai_provider_opt.set("Gemini Cloud (Standard)")
+
+        # Live Model
+        ctk.CTkLabel(l_inputs, text="Live Model Name:", width=140, anchor="w", font=ctk.CTkFont(size=12)).grid(row=1, column=0, pady=4, sticky="w")
+        self.live_model_entry = ctk.CTkEntry(l_inputs, width=260)
+        self.live_model_entry.grid(row=1, column=1, padx=8, pady=4, sticky="w")
+        self.live_model_entry.insert(0, getattr(config, "gemini_live_model", "gemini-2.0-flash-live-001"))
+
+        # Voice selection
+        ctk.CTkLabel(l_inputs, text="Live Spoken Voice:", width=140, anchor="w", font=ctk.CTkFont(size=12)).grid(row=2, column=0, pady=4, sticky="w")
+        self.live_voice_opt = ctk.CTkOptionMenu(
+            l_inputs,
+            values=["Puck", "Charon", "Kore", "Fenrir", "Aoede"],
+            width=260,
+        )
+        self.live_voice_opt.grid(row=2, column=1, padx=8, pady=4, sticky="w")
+        self.live_voice_opt.set(getattr(config, "live_voice", "Puck"))
+
+        # Language code
+        ctk.CTkLabel(l_inputs, text="Language Code:", width=140, anchor="w", font=ctk.CTkFont(size=12)).grid(row=3, column=0, pady=4, sticky="w")
+        self.live_lang_entry = ctk.CTkEntry(l_inputs, width=120)
+        self.live_lang_entry.grid(row=3, column=1, padx=8, pady=4, sticky="w")
+        self.live_lang_entry.insert(0, getattr(config, "live_language", "en"))
+
+        # Switches row
+        l_sw_row = ctk.CTkFrame(live_card, fg_color="transparent")
+        l_sw_row.pack(fill="x", padx=16, pady=4)
+
+        self.sw_live_screen = ctk.CTkSwitch(
+            l_sw_row,
+            text="Share screen by default when Live session connects",
+            font=ctk.CTkFont(size=12),
+        )
+        self.sw_live_screen.pack(side="left", padx=(0, 20))
+        if getattr(config, "live_screen_share", False):
+            self.sw_live_screen.select()
+        else:
+            self.sw_live_screen.deselect()
+
+        # Push to talk info
+        ctk.CTkLabel(
+            live_card,
+            text="🎙️ Push-to-Talk Hotkey: Ctrl+Space (Global across all Windows apps) • Red Stop: Ctrl+Alt+Q",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#38bdf8",
+        ).pack(anchor="w", padx=16, pady=(4, 4))
+
+        # Free tier privacy notice
+        ctk.CTkLabel(
+            live_card,
+            text="ℹ️ Google Privacy Notice: On the free tier, Google may use your data to improve its products.",
+            font=ctk.CTkFont(size=11, slant="italic"),
+            text_color="#94a3b8",
+        ).pack(anchor="w", padx=16, pady=(0, 12))
+
         # ── 5. SAVE BUTTON & FEEDBACK ─────────────────────────────
         save_box = ctk.CTkFrame(self.view_settings, fg_color="transparent")
         save_box.pack(fill="x", padx=16, pady=(14, 20))
@@ -902,6 +1033,11 @@ class JarvisApp(ctk.CTk):
         config.calendar_ical_url = self.cal_ical_entry.get().strip()
         config.whatsapp_client_type = self.wa_client_opt.get()
         config.whatsapp_default_phone = self.wa_phone_entry.get().strip()
+        config.ai_provider = self.ai_provider_opt.get()
+        config.gemini_live_model = self.live_model_entry.get().strip() or "gemini-2.0-flash-live-001"
+        config.live_voice = self.live_voice_opt.get()
+        config.live_language = self.live_lang_entry.get().strip() or "en"
+        config.live_screen_share = bool(self.sw_live_screen.get())
         config.save()
 
         # Update badge
@@ -946,6 +1082,15 @@ class JarvisApp(ctk.CTk):
         elif mode == "settings":
             self.view_settings.pack(fill="both", expand=True)
             self.btn_mode_settings.configure(fg_color=_ACCENT_CYAN, text_color="#05070a")
+
+    def open_live_panel(self) -> None:
+        """Opens or brings to front the Gemini Live floating HUD panel."""
+        if self.live_panel is not None and self.live_panel.winfo_exists():
+            self.live_panel.lift()
+            self.live_panel.focus_force()
+            return
+        self.live_panel = GeminiLivePanel(self, self.live_engine)
+        self.live_engine.start()
 
     # ─────────────────────────────────────────────────────────────
     #  EVENT HANDLERS & CALLBACKS
@@ -1112,6 +1257,10 @@ class JarvisApp(ctk.CTk):
 
     def on_emergency_stop_clicked(self) -> None:
         self.worker.stop()
+        if hasattr(self, "live_engine"):
+            self.live_engine.stop()
+        if hasattr(self, "live_panel") and self.live_panel and self.live_panel.winfo_exists():
+            self.live_panel.emergency_stop()
         self.plan_card.pack_forget()
 
     def on_task_completed(self) -> None:

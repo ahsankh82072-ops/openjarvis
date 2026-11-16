@@ -327,8 +327,8 @@ class GeminiLivePanel(ctk.CTkToplevel):
         self.btn_ptt.pack(fill="x", pady=4)
 
         # Bind mouse press and release
-        self.btn_ptt.bind("<ButtonPress-1>", lambda e: self.engine.set_ptt(True))
-        self.btn_ptt.bind("<ButtonRelease-1>", lambda e: self.engine.set_ptt(False))
+        self.btn_ptt.bind("<ButtonPress-1>", self._on_ptt_press)
+        self.btn_ptt.bind("<ButtonRelease-1>", self._on_ptt_release)
 
         # Action Buttons Row
         row_btns = ctk.CTkFrame(ctrl_frame, fg_color="transparent")
@@ -377,26 +377,47 @@ class GeminiLivePanel(ctk.CTkToplevel):
     # ─────────────────────────────────────────────────────────────
     #  UI EVENT HANDLERS
     # ─────────────────────────────────────────────────────────────
+    def _on_ptt_press(self, event=None) -> None:
+        self.btn_ptt.configure(
+            text="🔴 RECORDING (RELEASE TO SEND)",
+            fg_color="#3b0716",
+            border_color="#f43f5e",
+            text_color="#f43f5e"
+        )
+        self.engine.set_ptt(True)
+
+    def _on_ptt_release(self, event=None) -> None:
+        self.btn_ptt.configure(
+            text="🎙️ HOLD TO SPEAK (Ctrl+Space)",
+            fg_color="#0a192f",
+            border_color=_ACCENT_CYAN,
+            text_color=_ACCENT_CYAN
+        )
+        self.engine.set_ptt(False)
+
     def on_status_changed(self, state: str) -> None:
         self.orb_canvas.set_state(state)
-        label_text = f"✨ {state.upper()}"
         if state == "Listening":
-            label_text = "🎙️ LISTENING..."
-            self.state_label.configure(text=label_text, text_color=_ACCENT_CYAN)
+            self.state_label.configure(text="🎙️ LISTENING...", text_color=_ACCENT_CYAN)
+            self.status_pill.configure(text="LISTENING", fg_color="#042f40", text_color=_ACCENT_CYAN)
         elif state == "Thinking":
-            label_text = "🧠 PROCESSING..."
-            self.state_label.configure(text=label_text, text_color=_ACCENT_GOLD)
+            self.state_label.configure(text="🧠 PROCESSING...", text_color=_ACCENT_GOLD)
+            self.status_pill.configure(text="THINKING", fg_color="#3a2505", text_color=_ACCENT_GOLD)
         elif state == "Speaking":
-            label_text = "🔊 SPEAKING..."
-            self.state_label.configure(text=label_text, text_color="#38bdf8")
+            self.state_label.configure(text="🔊 SPEAKING...", text_color="#38bdf8")
+            self.status_pill.configure(text="SPEAKING", fg_color="#0c4a6e", text_color="#38bdf8")
         elif state == "Acting":
-            label_text = "⚡ PERFORMING ACTION..."
-            self.state_label.configure(text=label_text, text_color=_ACCENT_GREEN)
+            self.state_label.configure(text="⚡ PERFORMING ACTION...", text_color=_ACCENT_GREEN)
+            self.status_pill.configure(text="ACTING", fg_color="#0d2818", text_color=_ACCENT_GREEN)
+        elif state == "Connecting":
+            self.state_label.configure(text="🔄 CONNECTING...", text_color=_ACCENT_GOLD)
+            self.status_pill.configure(text="CONNECTING", fg_color="#3a2505", text_color=_ACCENT_GOLD)
         elif state == "Stopped":
-            label_text = "🛑 STOPPED"
-            self.state_label.configure(text=label_text, text_color=_ACCENT_RED)
-        else:
-            self.state_label.configure(text=label_text, text_color=_ACCENT_CYAN)
+            self.state_label.configure(text="🛑 STOPPED", text_color=_ACCENT_RED)
+            self.status_pill.configure(text="STOPPED", fg_color="#450a0a", text_color=_ACCENT_RED)
+        else:  # Idle / Live
+            self.state_label.configure(text="✨ STANDBY — TALK FREELY", text_color=_ACCENT_CYAN)
+            self.status_pill.configure(text="LIVE", fg_color="#0d2818", text_color=_ACCENT_GREEN)
 
     def on_transcript_received(self, sender: str, text: str, is_final: bool = False) -> None:
         clean = text.strip()

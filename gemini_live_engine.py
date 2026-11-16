@@ -173,6 +173,15 @@ class GeminiLiveEngine:
             self._notify_status("Listening")
         else:
             self._notify_status("Thinking")
+            # Signal end of user audio stream turn so Gemini generates reply
+            if self._current_session and self._loop and self._loop.is_running():
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        self._current_session.send_realtime_input(audio_stream_end=True),
+                        self._loop
+                    )
+                except Exception:
+                    pass
 
     def approve_action(self, approved: bool) -> None:
         """Callback from UI when user confirms or rejects a critical action."""
@@ -283,14 +292,16 @@ class GeminiLiveEngine:
     async def _run_single_session(self) -> None:
         """Initializes client, sets up tools, and runs bidirectional streaming."""
         # 1. API Key resolution (Never printed or saved in files)
-        api_key = os.environ.get("GEMINI_API_KEY") or config.gemini_api_key
+        api_key = (os.environ.get("GEMINI_API_KEY") or config.gemini_api_key or "").strip()
         if not api_key:
             self._notify_error("GEMINI_API_KEY environment variable is not set. Please set it or enter it in Settings.")
             self.is_running = False
             return
 
-        client = genai.Client(api_key=api_key)
-        model_id = config.gemini_live_model or "gemini-2.0-flash-live-001"
+        client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
+        model_id = (config.gemini_live_model or "gemini-2.5-flash-native-audio-latest").strip()
+        if "live-001" in model_id:
+            model_id = "gemini-2.5-flash-native-audio-latest"
         voice_name = config.live_voice or "Puck"
 
         # 2. Tools Declaration
@@ -759,6 +770,9 @@ class GeminiLiveEngine:
     #  CALLBACK NOTIFIERS
     # ─────────────────────────────────────────────────────────────
     def _notify_status(self, status: str) -> None:
+        if getattr(self, "_last_status", None) == status:
+            return
+        self._last_status = status
         cb = self.callbacks.get("on_status")
         if cb:
             cb(status)

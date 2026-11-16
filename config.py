@@ -49,7 +49,7 @@ class JarvisConfig:
     full_pc_control: bool = True
     always_on_top: bool = False
     # Gemini Live API Settings
-    gemini_live_model: str = "gemini-2.0-flash-live-001"
+    gemini_live_model: str = "gemini-2.5-flash-native-audio-latest"
     live_voice: str = "Puck"
     live_language: str = "en"
     live_screen_share: bool = False
@@ -66,7 +66,7 @@ class JarvisConfig:
     def load(cls) -> "JarvisConfig":
         if os.path.exists(_CONFIG_PATH):
             try:
-                with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
+                with open(_CONFIG_PATH, "r", encoding="utf-8-sig") as f:
                     data = json.load(f)
                     return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
             except Exception:

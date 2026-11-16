@@ -48,7 +48,7 @@ class JarvisConfig:
     ask_before_every_action: bool = False
     full_pc_control: bool = True
     always_on_top: bool = False
-    max_steps: int = 25
+    max_steps: int = 5
     gmail_address: str = ""
     gmail_app_password: str = ""
     whatsapp_default_phone: str = ""

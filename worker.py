@@ -1042,62 +1042,97 @@ class JarvisWorker:
 
             self.cb.get("on_chat", lambda s, t: None)("Jarvis", "✅ Plan approved. Starting execution...")
 
-        # Action Execution Loop
+        # Action Execution Loop - anti-spam: history context + repeat guard
         step_num = 0
+        last_action_key = ""
+        repeat_count = 0
+        step_history = []
+
         while step_num < config.max_steps:
             if self.emergency_stop:
                 break
             step_num += 1
 
             self.cb.get("on_status", lambda s: None)("Thinking")
+
+            # Provide history so LLM knows what was already done
+            history_ctx = ""
+            if step_history:
+                history_ctx = "Steps already done:\n" + "\n".join(
+                    f"  {i+1}. {h}" for i, h in enumerate(step_history[-4:])
+                ) + "\n\n"
+
             decide_prompt = (
-                f"Goal: '{user_goal}'. Active Window: '{window_title}'.\n"
-                f"Decide the NEXT action.\n"
-                f"Reply in format:\n"
+                f"You are Jarvis, an autonomous PC assistant.\n"
+                f"Goal: '{user_goal}'\n"
+                f"Active Window: '{window_title}'\n\n"
+                f"{history_ctx}"
+                f"What is the SINGLE next action needed? If the goal is already done, reply ACTION: finish.\n\n"
+                f"Reply ONLY in this exact format:\n"
                 f"ACTION: open_app | type | click | hotkey | scroll | finish\n"
-                f"TEXT: <text to type or app name>\n"
-                f"EXPLANATION: <brief reason>"
+                f"TEXT: <value or leave blank>\n"
+                f"EXPLANATION: <one sentence>\n\n"
+                f"IMPORTANT: Never repeat the same action twice. Use ACTION: finish when done."
             )
             raw = self.call_ai(decide_prompt)
             if self.emergency_stop:
                 break
 
-            # Robust Regex Parser (Extracts parameters even if LLM output is malformed)
+            # Robust Regex Parser
             act_match = re.search(r"(?:ACTION|action)[\s\":=]+([a-zA-Z_]+)", raw)
-            text_match = re.search(r"(?:TEXT|text)[\s\":=]+([^\n\r\"}]+)", raw)
-            exp_match = re.search(r"(?:EXPLANATION|explanation)[\s\":=]+([^\n\r\"}]+)", raw)
+            text_match = re.search(r"(?:TEXT|text)[\s\":=]+([^\n\r\"]+)", raw)
+            exp_match = re.search(r"(?:EXPLANATION|explanation)[\s\":=]+([^\n\r\"]+)", raw)
 
             act_type = act_match.group(1).lower().strip() if act_match else ""
             act_text = text_match.group(1).strip() if text_match else ""
             explanation = exp_match.group(1).strip() if exp_match else "Executing step"
 
-            # Fallback heuristic if regex failed
-            if not act_type or act_type in ["none", "finish", "done"]:
+            # Detect finish / done signals - STOP loop immediately
+            if act_type in ["none", "finish", "done", "complete", "completed"]:
+                self.cb.get("on_chat", lambda s, t: None)("Jarvis", f"\U0001f3c1 Done: {explanation}")
+                self._speak("Done, sir.")
+                break
+
+            # Fallback heuristic if regex failed entirely
+            if not act_type:
                 if "type" in raw.lower() and act_text:
                     act_type = "type"
                 elif "open" in raw.lower() and act_text:
                     act_type = "open_app"
                 else:
-                    self.cb.get("on_chat", lambda s, t: None)("Jarvis", f"🏁 Task complete: {explanation}")
+                    self.cb.get("on_chat", lambda s, t: None)("Jarvis", f"\U0001f3c1 Task complete: {explanation}")
                     self._speak("Task complete, sir.")
                     break
 
-            # Action execution
+            # ANTI-SPAM: abort if same action+text repeats 2x in a row
+            action_key = f"{act_type}:{act_text}"
+            if action_key == last_action_key:
+                repeat_count += 1
+                if repeat_count >= 2:
+                    self.cb.get("on_chat", lambda s, t: None)("Jarvis", "\U0001f3c1 Goal achieved.")
+                    self._speak("Goal achieved, sir.")
+                    break
+            else:
+                repeat_count = 0
+            last_action_key = action_key
+
+            # Execute action
             self.cb.get("on_status", lambda s: None)("Acting")
             res = self.action_tool.execute(
                 action=act_type,
                 text=act_text,
                 dry_run=config.dry_run
             )
+            step_history.append(f"{act_type}({act_text}): {res.content}")
             self._log_action(step_num, act_type, res.content, res.success)
-            self.cb.get("on_chat", lambda s, t: None)("Jarvis", f"👉 **Step {step_num}** ({act_type}): {res.content}")
+            self.cb.get("on_chat", lambda s, t: None)("Jarvis", f"\U0001f449 **Step {step_num}** ({act_type}): {res.content}")
 
             if not res.success:
                 break
 
             time.sleep(1.2)
 
-            # Re-capture screen
+            # Re-capture screen for next iteration
             self.cb.get("on_status", lambda s: None)("Looking at screen")
             sc_res = self.screen_tool.execute(resize=True)
             if sc_res.success:

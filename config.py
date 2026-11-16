@@ -6,9 +6,30 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import asdict, dataclass
 
-_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis_settings.json")
+
+def _get_config_path() -> str:
+    # 1. Persistent home folder (~/.openjarvis/jarvis_settings.json)
+    home_cfg = os.path.expanduser("~/.openjarvis/jarvis_settings.json")
+    if os.path.exists(home_cfg):
+        return home_cfg
+    # 2. Next to executable
+    if getattr(sys, "frozen", False):
+        exe_cfg = os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "jarvis_settings.json")
+        if os.path.exists(exe_cfg):
+            return exe_cfg
+    # 3. Source directory
+    src_cfg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis_settings.json")
+    if os.path.exists(src_cfg):
+        return src_cfg
+    # Default fallback path
+    os.makedirs(os.path.dirname(home_cfg), exist_ok=True)
+    return home_cfg
+
+
+_CONFIG_PATH = _get_config_path()
 
 
 @dataclass
@@ -47,8 +68,10 @@ class JarvisConfig:
         return cls()
 
     def save(self) -> None:
+        target_path = _get_config_path()
         try:
-            with open(_CONFIG_PATH, "w", encoding="utf-8") as f:
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            with open(target_path, "w", encoding="utf-8") as f:
                 json.dump(asdict(self), f, indent=2)
         except Exception as e:
             print(f"Failed to save settings: {e}")

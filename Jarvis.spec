@@ -3,21 +3,28 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [('src', 'src')]
 binaries = []
-hiddenimports = []
-tmp_ret = collect_all('customtkinter')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+hiddenimports = ['sounddevice', 'google.genai', 'google.genai.types']
+
+for pkg in ['customtkinter', '_sounddevice_data', 'google.genai']:
+    try:
+        tmp_ret = collect_all(pkg)
+        datas += tmp_ret[0]
+        binaries += tmp_ret[1]
+        hiddenimports += tmp_ret[2]
+    except Exception:
+        pass
 
 
 a = Analysis(
     ['ui.py'],
-    pathex=['src'],
+    pathex=['src', '.'],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['pytest'],
     noarchive=False,
     optimize=0,
 )

@@ -35,7 +35,7 @@ _CONFIG_PATH = _get_config_path()
 @dataclass
 class JarvisConfig:
     ai_provider: str = "Gemini Cloud (with Ollama Fallback)"
-    gemini_api_key: str = "AQ.Ab8RN6KQkLoVJNZMGLAPhEHftV-MmW-NE94xPxBHXZccwcuGIA"
+    gemini_api_key: str = ""
     gemini_model: str = "gemini-3.1-flash-lite"
     use_gemini_cloud: bool = True
     ollama_host: str = "http://localhost:11434"

@@ -1,0 +1,33 @@
+# Screen Assistant — local AI assistant that can see your screen and control the PC
+# Usage:
+#   jarvis ask "what is on my screen?"
+#   jarvis ask "summarise this page"
+#   jarvis ask "open notepad and type hello"
+#   jarvis chat --voice           # interactive push-to-talk voice mode
+
+[engine]
+default = "ollama"
+
+[engine.ollama]
+host = "http://localhost:11434"
+
+[intelligence]
+default_model = "phi3:mini"
+
+[agent]
+default_agent = "orchestrator"
+max_turns = 15
+objective = "You are Jarvis, an autonomous PC screen and desktop assistant. Use screen_capture and describe_screen to see what is on screen, and computer_action to perform safe desktop tasks. Always verify results after acting."
+
+[tools]
+enabled = [
+    "screen_capture",
+    "describe_screen",
+    "computer_action",
+    "think",
+    "calculator"
+]
+
+[server]
+host = "127.0.0.1"
+port = 8000

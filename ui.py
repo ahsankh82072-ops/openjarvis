@@ -206,27 +206,16 @@ class JarvisApp(ctk.CTk):
         self.header_frame = ctk.CTkFrame(self, height=58, corner_radius=0, fg_color="#0e141d")
         self.header_frame.pack(fill="x", side="top")
 
-        # Logo & AI Engine Badge
+        # Minimalist Icon Logo (no text names)
         logo_box = ctk.CTkFrame(self.header_frame, fg_color="transparent")
         logo_box.pack(side="left", padx=12, pady=8)
 
         ctk.CTkLabel(
             logo_box,
-            text="⚡ JARVIS",
-            font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
+            text="⚡",
+            font=ctk.CTkFont(family="Segoe UI", size=22, weight="bold"),
             text_color=_ACCENT_CYAN,
-        ).pack(side="left", padx=(0, 6))
-
-        ctk.CTkLabel(
-            logo_box,
-            text="✨ Gemini Cloud",
-            font=ctk.CTkFont(size=10, weight="bold"),
-            text_color="#80d8ff",
-            fg_color="#102a45",
-            corner_radius=6,
-            padx=6,
-            pady=2,
-        ).pack(side="left")
+        ).pack(side="left", padx=4)
 
         # Status Dot & Label
         self.status_container = ctk.CTkFrame(self.header_frame, fg_color="#151e2b", corner_radius=14)
@@ -243,7 +232,7 @@ class JarvisApp(ctk.CTk):
         )
         self.status_lbl.pack(side="left", padx=(0, 12), pady=4)
 
-        # 3 SEPARATED MODE BUTTONS (Center of Header)
+        # 4 SEPARATED MODE BUTTONS (Center of Header)
         self.mode_frame = ctk.CTkFrame(self.header_frame, fg_color="#121822", corner_radius=12)
         self.mode_frame.pack(side="left", padx=20, pady=8)
 
@@ -273,8 +262,8 @@ class JarvisApp(ctk.CTk):
 
         self.btn_mode_screen = ctk.CTkButton(
             self.mode_frame,
-            text="🖥️ Screen Control",
-            width=140,
+            text="🖥️ Screen Share & Follow",
+            width=165,
             height=32,
             font=ctk.CTkFont(size=12, weight="bold"),
             fg_color="#1e2633",
@@ -478,23 +467,50 @@ class JarvisApp(ctk.CTk):
         left_col.pack(side="left", fill="y", padx=(0, 8), pady=4)
         left_col.pack_propagate(False)
 
-        ctk.CTkLabel(left_col, text="🖥️ LIVE SCREEN VIEW", font=ctk.CTkFont(size=14, weight="bold"), text_color=_ACCENT_CYAN).pack(anchor="w", padx=14, pady=12)
+        # Title & Active Badge
+        head_box = ctk.CTkFrame(left_col, fg_color="transparent")
+        head_box.pack(fill="x", padx=14, pady=(12, 4))
+
+        ctk.CTkLabel(head_box, text="🖥️ SCREEN SHARE & FOLLOW", font=ctk.CTkFont(size=13, weight="bold"), text_color=_ACCENT_CYAN).pack(side="left")
+
+        ctk.CTkLabel(
+            head_box,
+            text="🟢 LIVE ACTIVE",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=_ACCENT_GREEN,
+            fg_color="#102b1d",
+            corner_radius=6,
+            padx=6,
+            pady=2,
+        ).pack(side="right")
+
+        # Instruction Card
+        guide_box = ctk.CTkFrame(left_col, fg_color="#101824", corner_radius=8)
+        guide_box.pack(fill="x", padx=14, pady=4)
+
+        ctk.CTkLabel(
+            guide_box,
+            text="🎙️ Switch to Google or any app and speak aloud:\n\"Jarvis, search for...\" • \"Jarvis, scroll down\"\n\"Jarvis, open YouTube\" • \"Jarvis, do this\"",
+            font=ctk.CTkFont(size=11),
+            text_color="#80d8ff",
+            justify="center",
+        ).pack(padx=8, pady=6)
 
         self.screen_preview_box = ctk.CTkLabel(
             left_col,
             text="Click 'Inspect Screen' to capture",
             width=350,
-            height=200,
+            height=175,
             fg_color="#0d1117",
             corner_radius=8,
             text_color="#8b949e",
         )
-        self.screen_preview_box.pack(padx=14, pady=6)
+        self.screen_preview_box.pack(padx=14, pady=4)
 
         self.screen_win_lbl = ctk.CTkLabel(
             left_col, text="Active Window: Unknown", font=ctk.CTkFont(size=11), text_color="#8b949e", wraplength=340, justify="left"
         )
-        self.screen_win_lbl.pack(anchor="w", padx=14, pady=(4, 10))
+        self.screen_win_lbl.pack(anchor="w", padx=14, pady=(2, 6))
 
         ctk.CTkButton(
             left_col,
@@ -502,20 +518,37 @@ class JarvisApp(ctk.CTk):
             font=ctk.CTkFont(size=13, weight="bold"),
             fg_color="#006699",
             hover_color="#0088cc",
-            height=36,
+            height=32,
             command=self.worker.describe_current_screen,
-        ).pack(fill="x", padx=14, pady=6)
+        ).pack(fill="x", padx=14, pady=4)
 
-        # Quick Task Buttons
-        ctk.CTkLabel(left_col, text="⚡ Quick Shortcuts:", font=ctk.CTkFont(size=12, weight="bold"), text_color="#80d8ff").pack(anchor="w", padx=14, pady=(16, 6))
+        # Quick In-App Navigation Controls
+        ctk.CTkLabel(left_col, text="⚡ In-App Navigation:", font=ctk.CTkFont(size=12, weight="bold"), text_color="#80d8ff").pack(anchor="w", padx=14, pady=(8, 2))
+
+        nav_frame1 = ctk.CTkFrame(left_col, fg_color="transparent")
+        nav_frame1.pack(fill="x", padx=14, pady=2)
+
+        ctk.CTkButton(nav_frame1, text="📜 Scroll Down", width=110, height=26, command=lambda: self.worker.start_task("scroll down")).pack(side="left", padx=2)
+        ctk.CTkButton(nav_frame1, text="📜 Scroll Up", width=110, height=26, command=lambda: self.worker.start_task("scroll up")).pack(side="left", padx=2)
+        ctk.CTkButton(nav_frame1, text="🔄 Refresh", width=110, height=26, command=lambda: self.worker.start_task("refresh")).pack(side="left", padx=2)
+
+        nav_frame2 = ctk.CTkFrame(left_col, fg_color="transparent")
+        nav_frame2.pack(fill="x", padx=14, pady=2)
+
+        ctk.CTkButton(nav_frame2, text="➕ New Tab", width=110, height=26, command=lambda: self.worker.start_task("new tab")).pack(side="left", padx=2)
+        ctk.CTkButton(nav_frame2, text="❌ Close Tab", width=110, height=26, command=lambda: self.worker.start_task("close tab")).pack(side="left", padx=2)
+        ctk.CTkButton(nav_frame2, text="⬅️ Back", width=110, height=26, command=lambda: self.worker.start_task("go back")).pack(side="left", padx=2)
+
+        # Quick App Shortcuts
+        ctk.CTkLabel(left_col, text="🚀 Quick App Launch:", font=ctk.CTkFont(size=12, weight="bold"), text_color="#80d8ff").pack(anchor="w", padx=14, pady=(6, 2))
 
         quick_frame = ctk.CTkFrame(left_col, fg_color="transparent")
-        quick_frame.pack(fill="x", padx=14)
+        quick_frame.pack(fill="x", padx=14, pady=2)
 
-        ctk.CTkButton(quick_frame, text="Notepad", width=75, height=28, command=lambda: self.worker.start_task("open notepad")).pack(side="left", padx=2)
-        ctk.CTkButton(quick_frame, text="Chrome", width=75, height=28, command=lambda: self.worker.start_task("open chrome")).pack(side="left", padx=2)
-        ctk.CTkButton(quick_frame, text="Calculator", width=75, height=28, command=lambda: self.worker.start_task("open calculator")).pack(side="left", padx=2)
-        ctk.CTkButton(quick_frame, text="Calendar", width=75, height=28, command=lambda: self.worker.start_task("open calendar")).pack(side="left", padx=2)
+        ctk.CTkButton(quick_frame, text="Chrome", width=80, height=26, command=lambda: self.worker.start_task("open chrome")).pack(side="left", padx=2)
+        ctk.CTkButton(quick_frame, text="YouTube", width=80, height=26, command=lambda: self.worker.start_task("open youtube")).pack(side="left", padx=2)
+        ctk.CTkButton(quick_frame, text="Notepad", width=80, height=26, command=lambda: self.worker.start_task("open notepad")).pack(side="left", padx=2)
+        ctk.CTkButton(quick_frame, text="Calc", width=80, height=26, command=lambda: self.worker.start_task("open calculator")).pack(side="left", padx=2)
 
         # Right Column: Action Log & Audit Trail
         right_col = ctk.CTkFrame(paned, fg_color=_CARD_BG, corner_radius=12)

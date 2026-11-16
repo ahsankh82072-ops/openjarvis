@@ -36,6 +36,13 @@ if _SRC_DIR not in sys.path:
 
 import openjarvis.tools
 from config import config
+
+try:
+    import pyautogui
+    pyautogui.FAILSAFE = False
+except Exception:
+    pass
+
 from openjarvis.tools.computer_action import ComputerActionTool, reset_step_counter
 from openjarvis.tools.describe_screen import DescribeScreenTool
 from openjarvis.tools.screen_capture import ScreenCaptureTool
@@ -171,6 +178,75 @@ class JarvisWorker:
 
         self.hotkey_thread = threading.Thread(target=self._hotkey_listener, daemon=True)
         self.hotkey_thread.start()
+
+        # Always-on Background Voice Listener (Listens across all apps like Google Chrome!)
+        self.bg_voice_thread = threading.Thread(target=self._bg_voice_listener, daemon=True)
+        self.bg_voice_thread.start()
+
+    def _bg_voice_listener(self) -> None:
+        """
+        Continuous background voice listener that works across all applications.
+        When user switches to Google, Chrome, or any app and says:
+        'Jarvis [instruction]' or 'Hey Jarvis [instruction]',
+        Jarvis immediately captures the active window screen and executes the instruction.
+        """
+        try:
+            import speech_recognition as sr
+        except ImportError:
+            return
+
+        recognizer = sr.Recognizer()
+        recognizer.dynamic_energy_threshold = True
+        recognizer.pause_threshold = 0.6
+        recognizer.phrase_threshold = 0.2
+        recognizer.non_speaking_duration = 0.3
+
+        try:
+            with sr.Microphone() as source:
+                recognizer.adjust_for_ambient_noise(source, duration=0.6)
+        except Exception:
+            pass
+
+        wake_regex = re.compile(
+            r'\b(hey\s+|ok\s+|hi\s+|hello\s+|yo\s+)?(jarvis|javis|jarves|jervis|travis|service|chavez)\b',
+            re.IGNORECASE
+        )
+
+        while not self._exit_listener:
+            if self._is_speaking or self.emergency_stop or self.is_ptt_active:
+                time.sleep(0.3)
+                continue
+
+            try:
+                with sr.Microphone() as source:
+                    audio = recognizer.listen(source, timeout=3.0, phrase_time_limit=8.0)
+            except Exception:
+                continue
+
+            if self._is_speaking or self.emergency_stop or self.is_ptt_active:
+                continue
+
+            try:
+                text = recognizer.recognize_google(audio).strip()
+            except Exception:
+                continue
+
+            if not text:
+                continue
+
+            lower = text.lower().strip()
+
+            if wake_regex.search(lower):
+                rest = wake_regex.sub('', lower).strip(" ,:!?.")
+                rest = re.sub(r'^(?:and|also|then|please|can you|could you|now)\s+', '', rest).strip()
+
+                if not rest:
+                    self.cb.get("on_status", lambda s: None)("Listening")
+                    self.cb.get("on_chat", lambda s, t: None)("You", text)
+                    self.cb.get("on_chat", lambda s, t: None)("Jarvis", "Yes, sir? What would you like me to do?")
+                    self._speak("Yes, sir? What would you like me to do?")
+                else:
+                    self.start_task(rest)
 
     def start_push_to_talk(self) -> None:
         """Invoked when user presses and holds Spacebar."""
@@ -729,6 +805,81 @@ class JarvisWorker:
         ]):
             self.describe_current_screen()
             return "ANALYZING_SCREEN"
+
+        # ── 4b. IN-APP SCROLLING & NAVIGATION ────────────────────
+        if any(p in lower_clean for p in ["scroll down", "scroll down a bit", "scroll down more", "page down", "go down"]):
+            try:
+                ctypes.windll.user32.mouse_event(0x0800, 0, 0, -480, 0)
+                return "📜 Scrolled down for you, sir."
+            except Exception:
+                pass
+
+        if any(p in lower_clean for p in ["scroll up", "scroll up a bit", "scroll up more", "page up", "go up"]):
+            try:
+                ctypes.windll.user32.mouse_event(0x0800, 0, 0, 480, 0)
+                return "📜 Scrolled up for you, sir."
+            except Exception:
+                pass
+
+        if any(p in lower_clean for p in ["new tab", "open a new tab", "create new tab"]):
+            try:
+                import pyautogui
+                pyautogui.hotkey("ctrl", "t")
+                return "🌐 Opened a new tab, sir."
+            except Exception:
+                pass
+
+        if any(p in lower_clean for p in ["close tab", "close this tab"]):
+            try:
+                import pyautogui
+                pyautogui.hotkey("ctrl", "w")
+                return "❌ Closed the current tab, sir."
+            except Exception:
+                pass
+
+        if any(p in lower_clean for p in ["switch tab", "next tab"]):
+            try:
+                import pyautogui
+                pyautogui.hotkey("ctrl", "tab")
+                return "👉 Switched to next tab, sir."
+            except Exception:
+                pass
+
+        if any(p in lower_clean for p in ["previous tab", "prior tab"]):
+            try:
+                import pyautogui
+                pyautogui.hotkey("ctrl", "shift", "tab")
+                return "👈 Switched to previous tab, sir."
+            except Exception:
+                pass
+
+        if any(p in lower_clean for p in ["reload", "reload page", "refresh page", "refresh this page"]):
+            try:
+                import pyautogui
+                pyautogui.hotkey("ctrl", "r")
+                return "🔄 Page refreshed, sir."
+            except Exception:
+                pass
+
+        if any(p in lower_clean for p in ["go back", "previous page", "navigate back"]):
+            try:
+                import pyautogui
+                pyautogui.hotkey("alt", "left")
+                return "⬅️ Navigated back, sir."
+            except Exception:
+                pass
+
+        # ── 4c. DIRECT IN-APP TYPING ─────────────────────────────
+        type_m = re.search(r"^(?:type|write|enter)\s+(.+)$", lower_clean)
+        if type_m:
+            text_to_type = type_m.group(1).strip()
+            try:
+                import pyautogui
+                pyautogui.write(text_to_type, interval=0.03)
+                pyautogui.press("enter")
+                return f"⌨️ Typed '{text_to_type}' and submitted, sir."
+            except Exception:
+                pass
 
         # ── 5. VOLUME CONTROLS ───────────────────────────────────
         if re.search(r"(?:volume|sound)\s+(?:up|louder|increase)", lower_clean):

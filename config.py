@@ -25,8 +25,15 @@ class JarvisConfig:
     voice_enabled: bool = True
     dry_run: bool = False
     ask_before_every_action: bool = False
+    full_pc_control: bool = True
     always_on_top: bool = False
-    max_steps: int = 15
+    max_steps: int = 25
+    gmail_address: str = ""
+    gmail_app_password: str = ""
+    whatsapp_default_phone: str = ""
+    whatsapp_client_type: str = "WhatsApp Web"
+    calendar_preference: str = "Google Calendar"
+    calendar_ical_url: str = ""
 
     @classmethod
     def load(cls) -> "JarvisConfig":

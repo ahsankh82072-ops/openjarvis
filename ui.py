@@ -172,6 +172,7 @@ class JarvisApp(ctk.CTk):
                 "on_screenshot": self._thread_safe(self.update_screenshot_preview),
                 "on_log": self._thread_safe(self.append_log_entry),
                 "on_task_done": self._thread_safe(self.on_task_completed),
+                "on_activate_window": self._thread_safe(self.on_activate_window),
             }
         )
 
@@ -282,6 +283,18 @@ class JarvisApp(ctk.CTk):
         )
         self.btn_mode_screen.pack(side="left", padx=4, pady=4)
 
+        self.btn_mode_settings = ctk.CTkButton(
+            self.mode_frame,
+            text="⚙️ Integrations & Settings",
+            width=175,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color="#1e2633",
+            text_color="#c9d1d9",
+            command=lambda: self.switch_mode("settings"),
+        )
+        self.btn_mode_settings.pack(side="left", padx=4, pady=4)
+
         # Big Red Emergency STOP Button (Top Right)
         ctk.CTkButton(
             self.header_frame,
@@ -303,7 +316,7 @@ class JarvisApp(ctk.CTk):
         self.topmost_switch.pack(side="right", padx=10, pady=10)
 
     # ─────────────────────────────────────────────────────────────
-    #  BUILD THE 3 SEPARATED VIEWS
+    #  BUILD THE 4 SEPARATED VIEWS
     # ─────────────────────────────────────────────────────────────
     def _build_views(self) -> None:
         self.view_container = ctk.CTkFrame(self, fg_color="transparent")
@@ -320,6 +333,10 @@ class JarvisApp(ctk.CTk):
         # VIEW 3: SCREEN & ACTION CONTROL
         self.view_screen = ctk.CTkFrame(self.view_container, fg_color=_BG_DARK)
         self._build_screen_control_view()
+
+        # VIEW 4: SETTINGS & INTEGRATIONS
+        self.view_settings = ctk.CTkScrollableFrame(self.view_container, fg_color=_BG_DARK)
+        self._build_settings_view()
 
     # ─────────────────────────────────────────────────────────────
     #  1. VOICE TALKING MODE VIEW (CENTER HOVERING LOGO)
@@ -514,21 +531,342 @@ class JarvisApp(ctk.CTk):
         self.log_textbox.pack(fill="both", expand=True, padx=14, pady=(0, 14))
 
     # ─────────────────────────────────────────────────────────────
+    #  4. SETTINGS & INTEGRATIONS VIEW
+    # ─────────────────────────────────────────────────────────────
+    def _build_settings_view(self) -> None:
+        # Title Header
+        title_box = ctk.CTkFrame(self.view_settings, fg_color="transparent")
+        title_box.pack(fill="x", padx=16, pady=(8, 12))
+
+        ctk.CTkLabel(
+            title_box,
+            text="⚙️ Integrations & Autonomous Control",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=_ACCENT_CYAN,
+        ).pack(side="left")
+
+        # ── 1. AUTONOMOUS FULL PC CONTROL CARD ───────────────────
+        ctrl_card = ctk.CTkFrame(self.view_settings, fg_color=_CARD_BG, corner_radius=12)
+        ctrl_card.pack(fill="x", padx=16, pady=6)
+
+        ctk.CTkLabel(
+            ctrl_card,
+            text="⚡ Autonomous PC Control",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color="#80d8ff",
+        ).pack(anchor="w", padx=16, pady=(12, 4))
+
+        ctk.CTkLabel(
+            ctrl_card,
+            text="When Full PC Control is enabled, Jarvis directly executes safe tasks and checks your apps without stopping for button approvals.",
+            font=ctk.CTkFont(size=12),
+            text_color="#8b949e",
+            wraplength=720,
+            justify="left",
+        ).pack(anchor="w", padx=16, pady=(0, 10))
+
+        sw_row = ctk.CTkFrame(ctrl_card, fg_color="transparent")
+        sw_row.pack(fill="x", padx=16, pady=(0, 14))
+
+        self.sw_full_control = ctk.CTkSwitch(
+            sw_row,
+            text="Full Autonomous PC Control (Direct execution without pauses)",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        )
+        self.sw_full_control.pack(side="left", padx=(0, 20))
+        if config.full_pc_control:
+            self.sw_full_control.select()
+        else:
+            self.sw_full_control.deselect()
+
+        self.sw_voice = ctk.CTkSwitch(
+            sw_row,
+            text="Voice Output (Speak aloud answers)",
+            font=ctk.CTkFont(size=12),
+        )
+        self.sw_voice.pack(side="left")
+        if config.voice_enabled:
+            self.sw_voice.select()
+        else:
+            self.sw_voice.deselect()
+
+        # ── 2. GMAIL INTEGRATION CARD ────────────────────────────
+        gmail_card = ctk.CTkFrame(self.view_settings, fg_color=_CARD_BG, corner_radius=12)
+        gmail_card.pack(fill="x", padx=16, pady=6)
+
+        g_head = ctk.CTkFrame(gmail_card, fg_color="transparent")
+        g_head.pack(fill="x", padx=16, pady=(12, 4))
+
+        ctk.CTkLabel(
+            g_head,
+            text="📧 Gmail Integration",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color="#80d8ff",
+        ).pack(side="left")
+
+        self.gmail_status_lbl = ctk.CTkLabel(
+            g_head,
+            text="● Attached" if (config.gmail_address and config.gmail_app_password) else "○ Not Attached",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=_ACCENT_GREEN if (config.gmail_address and config.gmail_app_password) else "#8b949e",
+        )
+        self.gmail_status_lbl.pack(side="right")
+
+        ctk.CTkLabel(
+            gmail_card,
+            text="Connect your Gmail account to ask Jarvis: 'Check my Gmail', 'Any unread emails?', or 'Read my emails' hands-free.",
+            font=ctk.CTkFont(size=12),
+            text_color="#8b949e",
+            wraplength=720,
+            justify="left",
+        ).pack(anchor="w", padx=16, pady=(0, 8))
+
+        g_inputs = ctk.CTkFrame(gmail_card, fg_color="transparent")
+        g_inputs.pack(fill="x", padx=16, pady=4)
+
+        ctk.CTkLabel(g_inputs, text="Gmail Address:", width=130, anchor="w", font=ctk.CTkFont(size=12)).grid(row=0, column=0, pady=4, sticky="w")
+        self.gmail_email_entry = ctk.CTkEntry(g_inputs, width=320, placeholder_text="yourname@gmail.com")
+        self.gmail_email_entry.grid(row=0, column=1, padx=8, pady=4, sticky="w")
+        if config.gmail_address:
+            self.gmail_email_entry.insert(0, config.gmail_address)
+
+        ctk.CTkLabel(g_inputs, text="App Password:", width=130, anchor="w", font=ctk.CTkFont(size=12)).grid(row=1, column=0, pady=4, sticky="w")
+        self.gmail_pwd_entry = ctk.CTkEntry(g_inputs, width=320, show="*", placeholder_text="16-character Google App Password")
+        self.gmail_pwd_entry.grid(row=1, column=1, padx=8, pady=4, sticky="w")
+        if config.gmail_app_password:
+            self.gmail_pwd_entry.insert(0, config.gmail_app_password)
+
+        ctk.CTkLabel(
+            gmail_card,
+            text="💡 Tip: Create a 16-letter App Password at https://myaccount.google.com/apppasswords (select App: Other -> 'Jarvis').",
+            font=ctk.CTkFont(size=11),
+            text_color="#a5d6ff",
+        ).pack(anchor="w", padx=16, pady=(4, 8))
+
+        g_btns = ctk.CTkFrame(gmail_card, fg_color="transparent")
+        g_btns.pack(fill="x", padx=16, pady=(0, 14))
+
+        ctk.CTkButton(
+            g_btns,
+            text="🔍 Test Connection & Fetch Unread",
+            width=210,
+            height=30,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=self._on_test_gmail,
+        ).pack(side="left", padx=(0, 10))
+
+        ctk.CTkButton(
+            g_btns,
+            text="🌐 Open Web Gmail",
+            width=140,
+            height=30,
+            fg_color="#21262d",
+            command=lambda: self.worker.start_task("open gmail"),
+        ).pack(side="left")
+
+        # ── 3. GOOGLE CALENDAR INTEGRATION CARD ──────────────────
+        cal_card = ctk.CTkFrame(self.view_settings, fg_color=_CARD_BG, corner_radius=12)
+        cal_card.pack(fill="x", padx=16, pady=6)
+
+        cal_head = ctk.CTkFrame(cal_card, fg_color="transparent")
+        cal_head.pack(fill="x", padx=16, pady=(12, 4))
+
+        ctk.CTkLabel(
+            cal_head,
+            text="📅 Calendar Integration",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color="#80d8ff",
+        ).pack(side="left")
+
+        ctk.CTkLabel(
+            cal_card,
+            text="Ask Jarvis: 'What is on my schedule today?', 'Any meetings today?', or 'Schedule meeting with Alex at 3pm'.",
+            font=ctk.CTkFont(size=12),
+            text_color="#8b949e",
+            wraplength=720,
+            justify="left",
+        ).pack(anchor="w", padx=16, pady=(0, 8))
+
+        c_inputs = ctk.CTkFrame(cal_card, fg_color="transparent")
+        c_inputs.pack(fill="x", padx=16, pady=4)
+
+        ctk.CTkLabel(c_inputs, text="Calendar Type:", width=130, anchor="w", font=ctk.CTkFont(size=12)).grid(row=0, column=0, pady=4, sticky="w")
+        self.cal_pref_opt = ctk.CTkOptionMenu(
+            c_inputs,
+            values=["Google Calendar", "Windows Calendar"],
+            width=220,
+        )
+        self.cal_pref_opt.grid(row=0, column=1, padx=8, pady=4, sticky="w")
+        self.cal_pref_opt.set(config.calendar_preference or "Google Calendar")
+
+        ctk.CTkLabel(c_inputs, text="Secret iCal URL:", width=130, anchor="w", font=ctk.CTkFont(size=12)).grid(row=1, column=0, pady=4, sticky="w")
+        self.cal_ical_entry = ctk.CTkEntry(c_inputs, width=420, placeholder_text="https://calendar.google.com/calendar/ical/.../basic.ics")
+        self.cal_ical_entry.grid(row=1, column=1, padx=8, pady=4, sticky="w")
+        if config.calendar_ical_url:
+            self.cal_ical_entry.insert(0, config.calendar_ical_url)
+
+        ctk.CTkLabel(
+            cal_card,
+            text="💡 Tip: In Google Calendar -> Settings -> Click calendar -> 'Secret address in iCal format' to read events hands-free.",
+            font=ctk.CTkFont(size=11),
+            text_color="#a5d6ff",
+        ).pack(anchor="w", padx=16, pady=(4, 8))
+
+        c_btns = ctk.CTkFrame(cal_card, fg_color="transparent")
+        c_btns.pack(fill="x", padx=16, pady=(0, 14))
+
+        ctk.CTkButton(
+            c_btns,
+            text="📋 Check Today's Schedule",
+            width=180,
+            height=30,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=self._on_check_calendar,
+        ).pack(side="left", padx=(0, 10))
+
+        ctk.CTkButton(
+            c_btns,
+            text="🌐 Open Calendar",
+            width=140,
+            height=30,
+            fg_color="#21262d",
+            command=lambda: self.worker.start_task("open calendar"),
+        ).pack(side="left")
+
+        # ── 4. WHATSAPP INTEGRATION CARD ─────────────────────────
+        wa_card = ctk.CTkFrame(self.view_settings, fg_color=_CARD_BG, corner_radius=12)
+        wa_card.pack(fill="x", padx=16, pady=6)
+
+        ctk.CTkLabel(
+            wa_card,
+            text="💬 WhatsApp Integration",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color="#80d8ff",
+        ).pack(anchor="w", padx=16, pady=(12, 4))
+
+        ctk.CTkLabel(
+            wa_card,
+            text="Ask Jarvis: 'Open WhatsApp', 'Any updates on WhatsApp?', or 'Send WhatsApp message to +12345 saying hello'.",
+            font=ctk.CTkFont(size=12),
+            text_color="#8b949e",
+            wraplength=720,
+            justify="left",
+        ).pack(anchor="w", padx=16, pady=(0, 8))
+
+        w_inputs = ctk.CTkFrame(wa_card, fg_color="transparent")
+        w_inputs.pack(fill="x", padx=16, pady=4)
+
+        ctk.CTkLabel(w_inputs, text="Client Type:", width=140, anchor="w", font=ctk.CTkFont(size=12)).grid(row=0, column=0, pady=4, sticky="w")
+        self.wa_client_opt = ctk.CTkOptionMenu(
+            w_inputs,
+            values=["WhatsApp Web", "WhatsApp Desktop App"],
+            width=220,
+        )
+        self.wa_client_opt.grid(row=0, column=1, padx=8, pady=4, sticky="w")
+        self.wa_client_opt.set(config.whatsapp_client_type or "WhatsApp Web")
+
+        ctk.CTkLabel(w_inputs, text="Default Phone Number:", width=140, anchor="w", font=ctk.CTkFont(size=12)).grid(row=1, column=0, pady=4, sticky="w")
+        self.wa_phone_entry = ctk.CTkEntry(w_inputs, width=280, placeholder_text="+1234567890 (optional)")
+        self.wa_phone_entry.grid(row=1, column=1, padx=8, pady=4, sticky="w")
+        if config.whatsapp_default_phone:
+            self.wa_phone_entry.insert(0, config.whatsapp_default_phone)
+
+        w_btns = ctk.CTkFrame(wa_card, fg_color="transparent")
+        w_btns.pack(fill="x", padx=16, pady=(6, 14))
+
+        ctk.CTkButton(
+            w_btns,
+            text="💬 Open WhatsApp",
+            width=160,
+            height=30,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=lambda: self.worker.start_task("open whatsapp"),
+        ).pack(side="left")
+
+        # ── 5. SAVE BUTTON & FEEDBACK ─────────────────────────────
+        save_box = ctk.CTkFrame(self.view_settings, fg_color="transparent")
+        save_box.pack(fill="x", padx=16, pady=(14, 20))
+
+        self.btn_save_settings = ctk.CTkButton(
+            save_box,
+            text="💾 SAVE ALL SETTINGS & ACCOUNTS",
+            height=40,
+            width=280,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color="#238636",
+            hover_color="#2ea043",
+            command=self.save_all_settings,
+        )
+        self.btn_save_settings.pack(side="left", padx=(0, 16))
+
+        self.save_feedback_lbl = ctk.CTkLabel(
+            save_box,
+            text="",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=_ACCENT_GREEN,
+        )
+        self.save_feedback_lbl.pack(side="left")
+
+    def _on_test_gmail(self) -> None:
+        """Saves current credentials and tests Gmail IMAP connection."""
+        self.save_all_settings()
+        self.gmail_status_lbl.configure(text="● Connecting...", text_color=_ACCENT_GOLD)
+        def _task():
+            res = self.worker.check_gmail_inbox(max_results=3)
+            if "Authentication Failed" in res or "Could not" in res:
+                self.after(0, lambda: self.gmail_status_lbl.configure(text="❌ Auth Error", text_color=_ACCENT_RED))
+            else:
+                self.after(0, lambda: self.gmail_status_lbl.configure(text="● Connected", text_color=_ACCENT_GREEN))
+            self.after(0, lambda: self.add_chat_message("Jarvis", res))
+        threading.Thread(target=_task, daemon=True).start()
+
+    def _on_check_calendar(self) -> None:
+        """Checks schedule and reports in chat."""
+        self.save_all_settings()
+        def _task():
+            res = self.worker.check_calendar_schedule()
+            self.after(0, lambda: self.add_chat_message("Jarvis", res))
+        threading.Thread(target=_task, daemon=True).start()
+
+    def save_all_settings(self) -> None:
+        """Persists all inputs into config and saves to jarvis_settings.json."""
+        config.full_pc_control = bool(self.sw_full_control.get())
+        config.voice_enabled = bool(self.sw_voice.get())
+        config.gmail_address = self.gmail_email_entry.get().strip()
+        config.gmail_app_password = self.gmail_pwd_entry.get().strip()
+        config.calendar_preference = self.cal_pref_opt.get()
+        config.calendar_ical_url = self.cal_ical_entry.get().strip()
+        config.whatsapp_client_type = self.wa_client_opt.get()
+        config.whatsapp_default_phone = self.wa_phone_entry.get().strip()
+        config.save()
+
+        # Update badge
+        if config.gmail_address and config.gmail_app_password:
+            self.gmail_status_lbl.configure(text="● Attached", text_color=_ACCENT_GREEN)
+        else:
+            self.gmail_status_lbl.configure(text="○ Not Attached", text_color="#8b949e")
+
+        self.save_feedback_lbl.configure(text="✅ All settings saved successfully!", text_color=_ACCENT_GREEN)
+        self.after(3000, lambda: self.save_feedback_lbl.configure(text=""))
+
+    # ─────────────────────────────────────────────────────────────
     #  MODE SWITCHING LOGIC
     # ─────────────────────────────────────────────────────────────
     def switch_mode(self, mode: str) -> None:
-        """Switch between the 3 clearly separated modes."""
+        """Switch between the 4 clearly separated modes."""
         self.current_mode = mode
 
         # Hide all views
         self.view_voice.pack_forget()
         self.view_chat.pack_forget()
         self.view_screen.pack_forget()
+        self.view_settings.pack_forget()
 
         # Reset button styles
         self.btn_mode_voice.configure(fg_color="#1e2633", text_color="#c9d1d9")
         self.btn_mode_chat.configure(fg_color="#1e2633", text_color="#c9d1d9")
         self.btn_mode_screen.configure(fg_color="#1e2633", text_color="#c9d1d9")
+        self.btn_mode_settings.configure(fg_color="#1e2633", text_color="#c9d1d9")
 
         if mode == "voice":
             self.view_voice.pack(fill="both", expand=True)
@@ -541,6 +879,9 @@ class JarvisApp(ctk.CTk):
             self.btn_mode_screen.configure(fg_color=_ACCENT_CYAN, text_color="#000000")
             # Automatically capture and inspect active screen immediately
             self.after(60, self.worker.describe_current_screen)
+        elif mode == "settings":
+            self.view_settings.pack(fill="both", expand=True)
+            self.btn_mode_settings.configure(fg_color=_ACCENT_CYAN, text_color="#000000")
 
     # ─────────────────────────────────────────────────────────────
     #  EVENT HANDLERS & CALLBACKS
@@ -642,9 +983,9 @@ class JarvisApp(ctk.CTk):
         """Invoked when user presses and holds Spacebar (or clicks & holds mic button)."""
         try:
             focus_w = self.focus_get()
-            # If currently typing in chat input entry, let Spacebar type spaces normally
-            if focus_w and hasattr(self, "text_input"):
-                if focus_w == self.text_input or focus_w == getattr(self.text_input, "_entry", None):
+            if focus_w:
+                w_type = str(type(focus_w)).lower()
+                if "entry" in w_type or "text" in w_type or focus_w == getattr(self, "text_input", None):
                     return
         except Exception:
             pass
@@ -666,8 +1007,9 @@ class JarvisApp(ctk.CTk):
         """Invoked when user releases Spacebar (or mouse button)."""
         try:
             focus_w = self.focus_get()
-            if focus_w and hasattr(self, "text_input"):
-                if focus_w == self.text_input or focus_w == getattr(self.text_input, "_entry", None):
+            if focus_w:
+                w_type = str(type(focus_w)).lower()
+                if "entry" in w_type or "text" in w_type or focus_w == getattr(self, "text_input", None):
                     return
         except Exception:
             pass
@@ -681,6 +1023,17 @@ class JarvisApp(ctk.CTk):
             fg_color=_ACCENT_CYAN
         )
         self.worker.stop_push_to_talk()
+
+    def on_activate_window(self) -> None:
+        """Brings Jarvis window to front when triggered by global shortcut."""
+        try:
+            self.deiconify()
+            self.lift()
+            self.attributes("-topmost", True)
+            if not config.always_on_top:
+                self.after(500, lambda: self.attributes("-topmost", False))
+        except Exception:
+            pass
 
     def on_voice_talk_clicked(self) -> None:
         """Triggered from Talking Mode center button."""
@@ -705,7 +1058,7 @@ class JarvisApp(ctk.CTk):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["voice", "chat", "screen"], default="voice")
+    parser.add_argument("--mode", choices=["voice", "chat", "screen", "settings"], default="voice")
     args = parser.parse_args()
 
     app = JarvisApp(start_mode=args.mode)

@@ -14,6 +14,9 @@ from __future__ import annotations
 import base64
 import ctypes
 import datetime
+import email
+from email.header import decode_header
+import imaplib
 import json
 import os
 import re
@@ -37,10 +40,22 @@ from openjarvis.tools.computer_action import ComputerActionTool, reset_step_coun
 from openjarvis.tools.describe_screen import DescribeScreenTool
 from openjarvis.tools.screen_capture import ScreenCaptureTool
 
+_DANGEROUS_PATTERNS = [
+    r"\bformat\s+[a-z]:",
+    r"\b(?:shutdown|reboot)\s+/[s|r]",
+    r"\brmdir\s+/s\s+/q\s+c:",
+    r"\bdel\s+/[fqs]+\s+c:\\windows",
+    r"\b(?:destroy|wipe)\s+(?:hard\s*drive|disk|partition)\b",
+]
+
 _CRITICAL_ACTIONS = [
-    "send message", "send email", "delete file", "delete folder",
-    "remove", "rm", "purchase", "buy", "pay", "payment",
-    "close unsaved", "shutdown", "reboot", "format"
+    r"\bdelete\s+(?:file|folder|database|partition)\b",
+    r"\bformat\b",
+    r"\bshutdown\b",
+    r"\breboot\b",
+    r"\bpurchase\b",
+    r"\bbuy\b",
+    r"\bpayment\b",
 ]
 
 _LOG_FILE = os.path.join(_REPO_ROOT, "computer_actions.log")
@@ -194,8 +209,9 @@ class JarvisWorker:
         threading.Thread(target=_worker, daemon=True).start()
 
     def _hotkey_listener(self) -> None:
-        """Global emergency stop listener: Ctrl+Alt+Q."""
+        """Global listener: Ctrl+Alt+Q for emergency stop, Ctrl+Alt+Space for global Push-to-Talk."""
         user32 = ctypes.windll.user32
+        space_was_down = False
         while not self._exit_listener:
             try:
                 ctrl = (user32.GetAsyncKeyState(0x11) & 0x8000) != 0
@@ -204,6 +220,18 @@ class JarvisWorker:
                 if ctrl and alt and q_key:
                     self.stop()
                     time.sleep(1.0)
+
+                # Global Push-to-Talk (Ctrl+Alt+Space) from anywhere in Windows
+                space_key = (user32.GetAsyncKeyState(0x20) & 0x8000) != 0
+                if ctrl and alt and space_key:
+                    if not space_was_down:
+                        space_was_down = True
+                        self.cb.get("on_activate_window", lambda: None)()
+                        self.start_push_to_talk()
+                else:
+                    if space_was_down:
+                        space_was_down = False
+                        self.stop_push_to_talk()
             except Exception:
                 pass
             time.sleep(0.05)
@@ -336,6 +364,196 @@ class JarvisWorker:
         return "Error: timed out"
 
     # ─────────────────────────────────────────────────────────────
+    #  HANDS-FREE INTEGRATIONS: GMAIL, CALENDAR & WHATSAPP
+    # ─────────────────────────────────────────────────────────────
+    def check_gmail_inbox(self, max_results: int = 5) -> str:
+        """Connects to Gmail via IMAP over SSL to fetch unread emails hands-free."""
+        email_addr = config.gmail_address.strip()
+        app_pwd = config.gmail_app_password.strip().replace(" ", "")
+
+        if not email_addr or not app_pwd:
+            subprocess.Popen('explorer.exe "https://mail.google.com"', shell=True)
+            msg = (
+                "📧 Gmail credentials are not configured yet, sir. I have opened Gmail in your browser for you.\n\n"
+                "💡 To hear updates hands-free without opening a browser, open the **⚙️ Integrations & Settings** tab and enter your Gmail Address and 16-character Google App Password."
+            )
+            self._speak("Gmail is not attached yet, sir. I opened Gmail in your browser.")
+            return msg
+
+        try:
+            self.cb.get("on_status", lambda s: None)("Checking Gmail")
+            mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+            mail.login(email_addr, app_pwd)
+            mail.select("INBOX", readonly=True)
+
+            status, response = mail.search(None, "UNSEEN")
+            unread_ids = response[0].split() if status == "OK" and response[0] else []
+
+            if not unread_ids:
+                status, all_response = mail.search(None, "ALL")
+                all_ids = all_response[0].split() if status == "OK" and all_response[0] else []
+                if not all_ids:
+                    mail.logout()
+                    msg = "📬 Your Gmail inbox is completely empty, sir. No emails found."
+                    self._speak("Your Gmail inbox is empty, sir.")
+                    return msg
+                recent_ids = all_ids[-max_results:]
+                header_prefix = "📬 No unread emails, sir. Here are your most recent messages:\n"
+                tts_prefix = "No unread emails, sir. Your latest messages are:"
+            else:
+                recent_ids = unread_ids[-max_results:]
+                header_prefix = f"📬 You have **{len(unread_ids)} unread email(s)** in Gmail, sir:\n"
+                tts_prefix = f"You have {len(unread_ids)} unread email{'s' if len(unread_ids) > 1 else ''}, sir."
+
+            recent_ids.reverse()  # Newest first
+            lines = []
+            speech_items = []
+
+            def _clean_hdr(raw):
+                if not raw:
+                    return "Unknown"
+                parts = decode_header(raw)
+                decoded = []
+                for piece, enc in parts:
+                    if isinstance(piece, bytes):
+                        decoded.append(piece.decode(enc or "utf-8", errors="replace"))
+                    else:
+                        decoded.append(str(piece))
+                return "".join(decoded)
+
+            for i, msg_id in enumerate(recent_ids, 1):
+                res, data = mail.fetch(msg_id, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])")
+                if res != "OK":
+                    continue
+                raw_email = data[0][1]
+                msg_obj = email.message_from_bytes(raw_email)
+                sender = _clean_hdr(msg_obj.get("From", "Unknown"))
+                subject = _clean_hdr(msg_obj.get("Subject", "(No Subject)"))
+                clean_sender = re.sub(r"<[^>]+>", "", sender).strip() or sender
+
+                lines.append(f"{i}. **{clean_sender}**: {subject}")
+                if i <= 3:
+                    speech_items.append(f"From {clean_sender}: {subject}")
+
+            mail.logout()
+
+            chat_report = header_prefix + "\n".join(lines)
+            spoken_summary = tts_prefix + " " + ". ".join(speech_items)
+            self._speak(spoken_summary)
+            self._log_action(1, "check_gmail", f"Fetched {len(recent_ids)} emails", True)
+            return chat_report
+
+        except Exception as e:
+            err_msg = str(e)
+            if "AUTHENTICATIONFAILED" in err_msg or "Invalid credentials" in err_msg:
+                msg = (
+                    "❌ Gmail Authentication Failed, sir.\n\n"
+                    "Please ensure you use a **16-character Google App Password** generated at myaccount.google.com/apppasswords."
+                )
+                self._speak("Gmail authentication failed, sir. Please check your App Password.")
+                return msg
+            subprocess.Popen('explorer.exe "https://mail.google.com"', shell=True)
+            msg = f"⚠️ Could not check Gmail directly ({err_msg}). Opened Gmail in your browser, sir."
+            self._speak("Could not reach Gmail directly, sir. Opened Gmail in your browser.")
+            return msg
+
+    def check_calendar_schedule(self) -> str:
+        """Checks upcoming schedule from iCal feed or opens preferred Calendar."""
+        ical_url = config.calendar_ical_url.strip()
+        if ical_url and ical_url.startswith("http"):
+            try:
+                self.cb.get("on_status", lambda s: None)("Checking Calendar")
+                req = urllib.request.Request(ical_url, headers={"User-Agent": "Jarvis-Desktop/1.0"})
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    content = resp.read().decode("utf-8", errors="replace")
+
+                events = []
+                now = datetime.datetime.now()
+                today_str = now.strftime("%Y%m%d")
+
+                raw_events = content.split("BEGIN:VEVENT")
+                for item in raw_events[1:]:
+                    summary_m = re.search(r"SUMMARY:(.*?)(?:\r?\n[A-Z]|\r?\n$)", item, re.DOTALL)
+                    dtstart_m = re.search(r"DTSTART(?:;[^:]+)?:(\d{8}(?:T\d{4,6}Z?)?)", item)
+                    if summary_m and dtstart_m:
+                        summary = summary_m.group(1).replace("\r", "").replace("\n", "").strip()
+                        dtstart = dtstart_m.group(1)
+                        if dtstart.startswith(today_str):
+                            time_part = ""
+                            if "T" in dtstart:
+                                t_raw = dtstart.split("T")[1][:4]
+                                time_part = f" at {t_raw[:2]}:{t_raw[2:]}"
+                            events.append(f"{summary}{time_part}")
+
+                if events:
+                    chat_msg = f"📅 **Today's Schedule** ({len(events)} event{'s' if len(events) > 1 else ''}):\n" + "\n".join(f"{i+1}. {ev}" for i, ev in enumerate(events))
+                    speak_msg = f"You have {len(events)} event{'s' if len(events) > 1 else ''} on your calendar today: " + ", ".join(events)
+                    self._speak(speak_msg)
+                    return chat_msg
+                else:
+                    msg = "📅 You have no scheduled events for today, sir. Your calendar is completely clear!"
+                    self._speak("You have no events scheduled for today, sir.")
+                    return msg
+            except Exception as e:
+                print(f"Calendar iCal error: {e}")
+
+        # Fallback to opening configured calendar
+        if "windows" in config.calendar_preference.lower():
+            subprocess.Popen("explorer.exe outlookcal:", shell=True)
+            msg = "📅 Opening Windows Calendar for you, sir."
+        else:
+            subprocess.Popen('explorer.exe "https://calendar.google.com/calendar/u/0/r/day"', shell=True)
+            msg = (
+                "📅 Opening your **Google Calendar** daily schedule for you, sir.\n\n"
+                "💡 *Tip: To have Jarvis read your events aloud automatically, paste your Google Calendar secret iCal address in the **⚙️ Integrations & Settings** tab.*"
+            )
+        self._speak("Opening your calendar, sir.")
+        return msg
+
+    def handle_whatsapp(self, command: str) -> str:
+        """Handles WhatsApp opening and sending messages hands-free."""
+        lower = command.lower()
+        default_phone = config.whatsapp_default_phone.strip()
+
+        send_m = re.search(
+            r"send\s+(?:a\s+)?whatsapp\s+(?:message\s+)?(?:to\s+)?(\+?\d+[\d\s\-]+|[a-zA-Z0-9_\s]+?)\s+(?:saying|that|with)\s+(.+)",
+            lower,
+        )
+        if send_m:
+            target = send_m.group(1).strip()
+            body = send_m.group(2).strip()
+            phone_digits = re.sub(r"[^\d+]", "", target)
+            if not phone_digits and default_phone:
+                phone_digits = re.sub(r"[^\d+]", "", default_phone)
+
+            enc_body = urllib.parse.quote(body)
+            if phone_digits:
+                if "desktop" in config.whatsapp_client_type.lower():
+                    url = f"whatsapp://send?phone={phone_digits}&text={enc_body}"
+                else:
+                    url = f"https://web.whatsapp.com/send?phone={phone_digits}&text={enc_body}"
+                subprocess.Popen(f'explorer.exe "{url}"', shell=True)
+                msg = f"💬 Opening WhatsApp chat with **{target}** and preparing your message: *\"{body}\"*, sir!"
+                self._speak(f"Opening WhatsApp chat with {target} to send your message.")
+                return msg
+
+        if "desktop" in config.whatsapp_client_type.lower():
+            subprocess.Popen("explorer.exe whatsapp://", shell=True)
+        else:
+            subprocess.Popen('explorer.exe "https://web.whatsapp.com"', shell=True)
+
+        msg = "💬 Opening **WhatsApp** for you, sir. Standing by for any incoming updates."
+        self._speak("Opening WhatsApp for you, sir.")
+        return msg
+
+    def get_daily_updates_briefing(self) -> str:
+        """Unified updates: Checks Gmail and Calendar in one hands-free command."""
+        self._speak("Checking all your updates now, sir.")
+        gmail_res = self.check_gmail_inbox(max_results=3)
+        cal_res = self.check_calendar_schedule()
+        return f"📋 **DAILY BRIEFING & UPDATES**\n\n{gmail_res}\n\n{'─'*30}\n\n{cal_res}"
+
+    # ─────────────────────────────────────────────────────────────
     #  SMART FAST-PATH TASK RESOLVER  (v2 — extended patterns)
     # ─────────────────────────────────────────────────────────────
     def _try_fast_path(self, goal: str) -> Optional[str]:
@@ -352,6 +570,38 @@ class JarvisWorker:
             r"^(?:please|can you|could you|jarvis|hey jarvis|ok jarvis|hi jarvis|and|also)\s+",
             "", lower
         ).strip()
+
+        # ── 0a. GMAIL UPDATES & READING ──────────────────────────
+        if any(p in lower_clean for p in [
+            "check gmail", "check my gmail", "check my email", "check my emails",
+            "check email", "check emails", "unread emails", "unread email",
+            "any new email", "any new emails", "any updates on gmail",
+            "gmail updates", "read my emails", "read my email", "read emails",
+            "what are my emails", "check inbox", "my inbox", "get emails", "gmail update"
+        ]):
+            return self.check_gmail_inbox()
+
+        # ── 0b. CALENDAR UPDATES & SCHEDULE ──────────────────────
+        if any(p in lower_clean for p in [
+            "check calendar", "check my calendar", "any updates on calendar",
+            "what is on my calendar", "what's on my calendar", "whats on my calendar",
+            "my schedule", "check my schedule", "today's schedule", "todays schedule",
+            "what meetings do i have", "any meetings today", "calendar update",
+            "calendar updates"
+        ]):
+            return self.check_calendar_schedule()
+
+        # ── 0c. WHATSAPP UPDATES & MESSAGING ─────────────────────
+        if "whatsapp" in lower_clean:
+            return self.handle_whatsapp(lower_clean)
+
+        # ── 0d. UNIFIED BRIEFING / DAILY UPDATES ─────────────────
+        if any(p in lower_clean for p in [
+            "any update", "any updates", "give me updates", "what are my updates",
+            "check updates", "daily briefing", "morning briefing",
+            "daily update", "all updates"
+        ]):
+            return self.get_daily_updates_briefing()
 
         # ── 1. YOUTUBE ────────────────────────────────────────────
         # Triggers: "play X", "play X on youtube", "open youtube and play X",
@@ -611,20 +861,24 @@ class JarvisWorker:
         if "Error:" in plan_text:
             plan_text = f"1. Open target application for '{user_goal}'\n2. Perform required typing or mouse actions\n3. Verify result"
 
-        is_risky = any(crit in user_goal.lower() or crit in plan_text.lower() for crit in _CRITICAL_ACTIONS)
+        # Check if genuinely dangerous action requiring explicit user gate
+        is_dangerous = any(re.search(pat, user_goal.lower()) for pat in _DANGEROUS_PATTERNS)
 
         clean_plan = re.sub(r"[*_#`\n\r]", " ", plan_text).strip()
         clean_plan = re.sub(r"\s+", " ", clean_plan)[:130]
 
-        if not is_risky and not config.ask_before_every_action:
-            # SAFE TASK -> Auto-execute directly without stopping!
-            self.cb.get("on_chat", lambda s, t: None)("Jarvis", f"⚡ Executing plan: {plan_text}")
-            self._speak(f"Executing plan: {clean_plan}")
+        # FULL PC CONTROL: If enabled and not catastrophic, execute directly without stopping!
+        require_approval = config.ask_before_every_action or is_dangerous or (not config.full_pc_control and any(re.search(pat, user_goal.lower()) for pat in _CRITICAL_ACTIONS))
+
+        if not require_approval:
+            # DIRECT AUTONOMOUS EXECUTION
+            self.cb.get("on_chat", lambda s, t: None)("Jarvis", f"⚡ Executing autonomously: {plan_text}")
+            self._speak(f"Executing: {clean_plan}")
         else:
-            # RISKY TASK or manual confirmation requested -> Read aloud and ask for approval
+            # DANGEROUS TASK or manual confirmation requested -> Read aloud and ask for approval
             self.cb.get("on_status", lambda s: None)("Waiting for your approval")
-            self.cb.get("on_plan", lambda p, r: None)(plan_text, is_risky)
-            self._speak(f"Plan proposed: {clean_plan}. Say 'yes' or click approve to proceed.")
+            self.cb.get("on_plan", lambda p, r: None)(plan_text, is_dangerous)
+            self._speak(f"Confirmation required: {clean_plan}. Say 'yes' or click approve to proceed.")
 
             self.waiting_for_plan_approval = True
             self.plan_approval_event.clear()
@@ -635,7 +889,7 @@ class JarvisWorker:
                 self.cb.get("on_chat", lambda s, t: None)("Jarvis", "❌ Plan cancelled by user.")
                 return
 
-            self.cb.get("on_chat", lambda s, t: None)("Jarvis", f"✅ Plan approved. Starting execution...")
+            self.cb.get("on_chat", lambda s, t: None)("Jarvis", "✅ Plan approved. Starting execution...")
 
         # Action Execution Loop
         step_num = 0

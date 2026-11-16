@@ -31,29 +31,32 @@ from worker import JarvisWorker
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
-# Theme Colors
-_ACCENT_CYAN = "#00e5ff"
-_ACCENT_MAGENTA = "#d500f9"
-_ACCENT_GREEN = "#00e676"
-_ACCENT_RED = "#ff1744"
-_ACCENT_GOLD = "#ffd600"
-_BG_DARK = "#0a0e14"
-_CARD_BG = "#131922"
-_USER_BUBBLE = "#1e3a5f"
-_JARVIS_BUBBLE = "#152332"
+# Ultra-Premium Minimalist Palette (Obsidian + Neon Cyan + Rose Accents)
+_ACCENT_CYAN = "#00f0ff"
+_ACCENT_MAGENTA = "#d946ef"
+_ACCENT_GREEN = "#10b981"
+_ACCENT_RED = "#ef4444"
+_ACCENT_GOLD = "#fbbf24"
+_BG_DARK = "#05070a"
+_HEADER_BG = "#080c14"
+_CARD_BG = "#0c111c"
+_CARD_BORDER = "#162032"
+_USER_BUBBLE = "#0d2033"
+_JARVIS_BUBBLE = "#0f1522"
 
 
-class HoveringJarvisLogo(ctk.CTkCanvas):
-    """Futuristic holographic Jarvis core that hovers in the center and pulses with speech."""
+class GlowingOrbVisualizer(ctk.CTkCanvas):
+    """
+    Cinematic undulating neon ribbon & orbital particle arcs visualizer.
+    Matches the user's reference design with fluid wave harmonics and concentric spinning arcs.
+    """
 
-    def __init__(self, master, width=380, height=340, **kwargs):
+    def __init__(self, master, width=440, height=380, **kwargs):
         super().__init__(master, width=width, height=height, bg=_BG_DARK, highlightthickness=0, **kwargs)
         self.width = width
         self.height = height
-        self.hover_angle = 0.0
-        self.pulse_phase = 0.0
-        self.rotation_angle = 0.0
-        self.state = "Idle"  # Idle, Listening, Thinking, Speaking, Stopped
+        self.angle = 0.0
+        self.state = "Idle"  # Idle, Listening, Thinking, Acting, Stopped
         self._animating = True
         self._animate()
 
@@ -65,92 +68,102 @@ class HoveringJarvisLogo(ctk.CTkCanvas):
             return
 
         self.delete("all")
-        self.hover_angle += 0.06
-        self.pulse_phase += 0.12
-        self.rotation_angle += 2.0
-
-        # Hover offset (smooth floating bobbing effect)
-        hover_y = math.sin(self.hover_angle) * 12.0
         cx = self.width / 2.0
-        cy = (self.height / 2.0) + hover_y
+        cy = self.height / 2.0
 
-        # Determine theme color based on status
+        # Dynamic speed and wave amplitude based on state
         if self.state == "Listening":
-            core_color = _ACCENT_MAGENTA
-            ring_color = "#ea80fc"
-            status_text = "🎙️ LISTENING"
+            speed_mult = 1.5
+            ribbon_amp = 18.0
+            pulse = math.sin(self.angle * 4.0) * 8.0
+            ribbon_color = "#00f0ff"
+            glow_aura = "#083344"
+            core_shades = ["#ff3366", "#ff2a5f", "#f43f5e", "#fb7185", "#be123c"]
         elif self.state == "Thinking":
-            core_color = _ACCENT_GOLD
-            ring_color = "#ffe57f"
-            status_text = "🧠 THINKING"
+            speed_mult = 2.4
+            ribbon_amp = 14.0
+            pulse = math.sin(self.angle * 6.0) * 6.0
+            ribbon_color = "#38bdf8"
+            glow_aura = "#0c4a6e"
+            core_shades = ["#fbbf24", "#f59e0b", "#f43f5e", "#ff2a5f", "#d97706"]
         elif self.state == "Acting":
-            core_color = "#ff6d00"
-            ring_color = "#ffab40"
-            status_text = "⚡ ACTING"
+            speed_mult = 1.8
+            ribbon_amp = 16.0
+            pulse = math.sin(self.angle * 3.0) * 7.0
+            ribbon_color = "#22d3ee"
+            glow_aura = "#155e75"
+            core_shades = ["#ff4d6d", "#f43f5e", "#e11d48", "#be123c", "#fb7185"]
         elif self.state == "Stopped":
-            core_color = _ACCENT_RED
-            ring_color = "#ff8a80"
-            status_text = "🛑 STOPPED"
-        else:
-            core_color = _ACCENT_CYAN
-            ring_color = "#80d8ff"
-            status_text = "✨ STANDBY — SPEAK ALOUD"
+            speed_mult = 0.3
+            ribbon_amp = 6.0
+            pulse = 0.0
+            ribbon_color = "#ef4444"
+            glow_aura = "#450a0a"
+            core_shades = ["#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444"]
+        else:  # Idle
+            speed_mult = 1.0
+            ribbon_amp = 11.0
+            pulse = math.sin(self.angle * 1.5) * 4.0
+            ribbon_color = "#00f0ff"
+            glow_aura = "#041d2d"
+            core_shades = ["#ff3366", "#ff4d6d", "#f43f5e", "#c9184a", "#800f2f"]
 
-        # 1. Outer Expanding Sound Waves (when listening or speaking)
-        if self.state in ["Listening", "Acting"]:
-            for i in range(3):
-                wave_r = 90 + ((self.pulse_phase * 15 + i * 35) % 65)
-                alpha_val = max(0, int(255 - (wave_r - 90) * 3.5))
-                if wave_r > 90:
-                    self.create_oval(
-                        cx - wave_r, cy - wave_r, cx + wave_r, cy + wave_r,
-                        outline=ring_color, width=1
-                    )
+        self.angle += 0.035 * speed_mult
 
-        # 2. Outer Rotating Sci-Fi Ring
-        outer_r = 110 + math.sin(self.pulse_phase) * 3
-        self.create_oval(cx - outer_r, cy - outer_r, cx + outer_r, cy + outer_r, outline="#1f2d3d", width=3)
+        # 1. Background subtle plasma auras
+        canvas_r = 135 + pulse * 0.5
+        self.create_oval(cx - canvas_r, cy - canvas_r, cx + canvas_r, cy + canvas_r, fill=glow_aura, outline="")
+        self.create_oval(cx - 100, cy - 100, cx + 100, cy + 100, fill="#12060a", outline="")
 
-        # Rotating Arc segments
-        arc_start = self.rotation_angle % 360
-        self.create_arc(
-            cx - outer_r, cy - outer_r, cx + outer_r, cy + outer_r,
-            start=arc_start, extent=70, outline=core_color, width=3, style="arc"
-        )
-        self.create_arc(
-            cx - outer_r, cy - outer_r, cx + outer_r, cy + outer_r,
-            start=(arc_start + 180) % 360, extent=70, outline=core_color, width=3, style="arc"
-        )
+        # 2. Concentric Crimson/Coral Orbital Arcs (from user reference image)
+        arc_configs = [
+            (62, self.angle * 35, 130, core_shades[0], 1.6),
+            (72, -self.angle * 45 + 50, 100, core_shades[1], 1.2),
+            (82, self.angle * 28 + 110, 150, core_shades[2], 1.8),
+            (90, -self.angle * 38 + 190, 85, core_shades[3], 1.1),
+            (99, self.angle * 22 + 260, 165, core_shades[1], 1.5),
+            (108, -self.angle * 32 + 80, 95, core_shades[4], 1.2),
+            (117, self.angle * 42 + 20, 120, core_shades[2], 1.4),
+            (126, -self.angle * 18 + 150, 140, core_shades[0], 1.0),
+        ]
 
-        # 3. Middle Glow Ring
-        mid_r = 75 + math.sin(self.pulse_phase * 1.5) * 4
-        self.create_oval(cx - mid_r, cy - mid_r, cx + mid_r, cy + mid_r, outline=ring_color, width=2)
+        for radius, start, extent, color, width in arc_configs:
+            self.create_arc(
+                cx - radius, cy - radius, cx + radius, cy + radius,
+                start=start % 360, extent=extent,
+                style="arc", outline=color, width=width
+            )
 
-        # 4. Core Circle (Pulsing)
-        core_r = 50 + math.sin(self.pulse_phase * 2) * 3
-        self.create_oval(cx - core_r, cy - core_r, cx + core_r, cy + core_r, fill="#0d1722", outline=core_color, width=2)
+        # 3. Fluid Undulating Neon Cyan Ribbon (Organic wave harmonics)
+        num_pts = 72
+        cyan_pts = []
+        base_r = 95 + pulse
+        amp1 = ribbon_amp * math.sin(self.angle * 1.8)
+        amp2 = (ribbon_amp * 0.7) * math.cos(self.angle * 2.4)
+        amp3 = (ribbon_amp * 0.4) * math.sin(self.angle * 3.2)
 
-        # 5. Center Arc Reactor Nodes
-        node_r = 22
-        self.create_oval(cx - node_r, cy - node_r, cx + node_r, cy + node_r, fill=core_color, outline="#ffffff", width=1)
+        for i in range(num_pts + 1):
+            th = i * 2 * math.pi / num_pts
+            # 3-lobed + 2-lobed + 5-lobed fluid harmonic wave
+            r = base_r + amp1 * math.sin(3 * th + self.angle * 2) + amp2 * math.cos(2 * th - self.angle * 1.4) + amp3 * math.sin(5 * th + self.angle)
+            px = cx + r * math.cos(th)
+            py = cy + r * math.sin(th)
+            cyan_pts.extend([px, py])
 
-        # 6. Central Brand Text
-        self.create_text(
-            cx, cy - 2,
-            text="JARVIS",
-            fill="#ffffff",
-            font=("Segoe UI", 12, "bold")
-        )
+        # Layered neon ribbon glow (from diffuse blur to razor-sharp core filament)
+        self.create_line(cyan_pts, smooth=True, fill="#042f40", width=12)
+        self.create_line(cyan_pts, smooth=True, fill="#0891b2", width=7)
+        self.create_line(cyan_pts, smooth=True, fill=ribbon_color, width=3.2)
+        self.create_line(cyan_pts, smooth=True, fill="#f0fdfa", width=1.2)
 
-        # 7. Bottom Status Caption
-        self.create_text(
-            cx, cy + 135,
-            text=status_text,
-            fill=core_color,
-            font=("Segoe UI", 12, "bold")
-        )
+        # 4. Inner Deep Core Void
+        self.create_oval(cx - 44, cy - 44, cx + 44, cy + 44, fill="#05070a", outline="#1c0a12", width=1.5)
 
         self.after(35, self._animate)
+
+
+# Alias for backward compatibility
+HoveringJarvisLogo = GlowingOrbVisualizer
 
 
 class JarvisApp(ctk.CTk):
@@ -203,95 +216,108 @@ class JarvisApp(ctk.CTk):
     #  TOP HEADER & MODE SELECTOR
     # ─────────────────────────────────────────────────────────────
     def _build_header(self) -> None:
-        self.header_frame = ctk.CTkFrame(self, height=58, corner_radius=0, fg_color="#0e141d")
+        self.header_frame = ctk.CTkFrame(self, height=52, corner_radius=0, fg_color=_HEADER_BG)
         self.header_frame.pack(fill="x", side="top")
 
-        # Minimalist Icon Logo (no text names)
+        # Minimalist Glowing Spark Icon
         logo_box = ctk.CTkFrame(self.header_frame, fg_color="transparent")
-        logo_box.pack(side="left", padx=12, pady=8)
+        logo_box.pack(side="left", padx=(16, 8), pady=8)
 
         ctk.CTkLabel(
             logo_box,
             text="⚡",
-            font=ctk.CTkFont(family="Segoe UI", size=22, weight="bold"),
+            font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"),
             text_color=_ACCENT_CYAN,
-        ).pack(side="left", padx=4)
+        ).pack(side="left")
 
-        # Status Dot & Label
-        self.status_container = ctk.CTkFrame(self.header_frame, fg_color="#151e2b", corner_radius=14)
-        self.status_container.pack(side="left", padx=8, pady=10)
+        # Sleek Status Pill
+        self.status_container = ctk.CTkFrame(self.header_frame, fg_color="#0e1524", corner_radius=12)
+        self.status_container.pack(side="left", padx=6, pady=10)
 
-        self.status_dot = ctk.CTkLabel(self.status_container, text="●", text_color=_ACCENT_GREEN, font=ctk.CTkFont(size=14))
-        self.status_dot.pack(side="left", padx=(10, 4), pady=4)
+        self.status_dot = ctk.CTkLabel(self.status_container, text="●", text_color=_ACCENT_GREEN, font=ctk.CTkFont(size=12))
+        self.status_dot.pack(side="left", padx=(8, 4), pady=2)
 
         self.status_lbl = ctk.CTkLabel(
             self.status_container,
             text="Idle",
-            font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
-            text_color="#c9d1d9",
+            font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
+            text_color="#94a3b8",
         )
-        self.status_lbl.pack(side="left", padx=(0, 12), pady=4)
+        self.status_lbl.pack(side="left", padx=(0, 10), pady=2)
 
-        # 4 SEPARATED MODE BUTTONS (Center of Header)
-        self.mode_frame = ctk.CTkFrame(self.header_frame, fg_color="#121822", corner_radius=12)
-        self.mode_frame.pack(side="left", padx=20, pady=8)
+        # Segmented Pill Mode Selector
+        self.mode_frame = ctk.CTkFrame(self.header_frame, fg_color="#0e1524", corner_radius=16)
+        self.mode_frame.pack(side="left", padx=24, pady=8)
 
         self.btn_mode_voice = ctk.CTkButton(
             self.mode_frame,
-            text="🎙️ Voice Talking Mode",
-            width=150,
-            height=32,
+            text="🎙️ Voice",
+            width=88,
+            height=30,
+            corner_radius=14,
             font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=_ACCENT_CYAN,
-            text_color="#000000",
+            text_color="#05070a",
+            hover_color="#38bdf8",
             command=lambda: self.switch_mode("voice"),
         )
-        self.btn_mode_voice.pack(side="left", padx=4, pady=4)
+        self.btn_mode_voice.pack(side="left", padx=3, pady=3)
 
         self.btn_mode_chat = ctk.CTkButton(
             self.mode_frame,
-            text="💬 Chat Assistant",
-            width=140,
-            height=32,
+            text="💬 Chat",
+            width=84,
+            height=30,
+            corner_radius=14,
             font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color="#1e2633",
-            text_color="#c9d1d9",
+            fg_color="transparent",
+            text_color="#94a3b8",
+            hover_color="#131b2e",
             command=lambda: self.switch_mode("chat"),
         )
-        self.btn_mode_chat.pack(side="left", padx=4, pady=4)
+        self.btn_mode_chat.pack(side="left", padx=3, pady=3)
 
         self.btn_mode_screen = ctk.CTkButton(
             self.mode_frame,
-            text="🖥️ Screen Share & Follow",
-            width=165,
-            height=32,
+            text="🖥️ Screen",
+            width=92,
+            height=30,
+            corner_radius=14,
             font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color="#1e2633",
-            text_color="#c9d1d9",
+            fg_color="transparent",
+            text_color="#94a3b8",
+            hover_color="#131b2e",
             command=lambda: self.switch_mode("screen"),
         )
-        self.btn_mode_screen.pack(side="left", padx=4, pady=4)
+        self.btn_mode_screen.pack(side="left", padx=3, pady=3)
 
         self.btn_mode_settings = ctk.CTkButton(
             self.mode_frame,
-            text="⚙️ Integrations & Settings",
-            width=175,
-            height=32,
+            text="⚙️ Settings",
+            width=96,
+            height=30,
+            corner_radius=14,
             font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color="#1e2633",
-            text_color="#c9d1d9",
+            fg_color="transparent",
+            text_color="#94a3b8",
+            hover_color="#131b2e",
             command=lambda: self.switch_mode("settings"),
         )
-        self.btn_mode_settings.pack(side="left", padx=4, pady=4)
+        self.btn_mode_settings.pack(side="left", padx=3, pady=3)
 
-        # Big Red Emergency STOP Button (Top Right)
+        # Minimalist Emergency STOP Pill (Top Right)
         ctk.CTkButton(
             self.header_frame,
-            text="🚨 EMERGENCY STOP",
-            fg_color="#d32f2f",
-            hover_color="#b71c1c",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            height=34,
+            text="🚨 STOP",
+            width=78,
+            height=28,
+            corner_radius=14,
+            fg_color="#271015",
+            hover_color="#450a0a",
+            border_color="#ef4444",
+            border_width=1,
+            text_color="#f87171",
+            font=ctk.CTkFont(size=11, weight="bold"),
             command=self.on_emergency_stop_clicked,
         ).pack(side="right", padx=14, pady=10)
 
@@ -299,10 +325,10 @@ class JarvisApp(ctk.CTk):
         self.topmost_switch = ctk.CTkSwitch(
             self.header_frame,
             text="Pin on top",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=11),
             command=self.toggle_always_on_top,
         )
-        self.topmost_switch.pack(side="right", padx=10, pady=10)
+        self.topmost_switch.pack(side="right", padx=8, pady=10)
 
     # ─────────────────────────────────────────────────────────────
     #  BUILD THE 4 SEPARATED VIEWS
@@ -331,46 +357,51 @@ class JarvisApp(ctk.CTk):
     #  1. VOICE TALKING MODE VIEW (CENTER HOVERING LOGO)
     # ─────────────────────────────────────────────────────────────
     def _build_voice_mode_view(self) -> None:
-        # Center Hovering Arc-Reactor Logo Canvas
-        self.logo_canvas = HoveringJarvisLogo(self.view_voice, width=420, height=360)
-        self.logo_canvas.pack(pady=(15, 5))
+        # Center Glowing Orb Visualizer Canvas (matching user reference design)
+        self.logo_canvas = GlowingOrbVisualizer(self.view_voice, width=440, height=380)
+        self.logo_canvas.pack(pady=(10, 4))
 
-        # Big Voice Push-to-Talk Button
+        # Minimalist Push-to-Talk Pill Button
         self.voice_action_btn = ctk.CTkButton(
             self.view_voice,
             text="🎙️ PRESS & HOLD SPACEBAR TO SPEAK",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color=_ACCENT_CYAN,
-            text_color="#000000",
-            hover_color="#00b0ff",
-            height=46,
-            width=380,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color="#0a192f",
+            border_color="#00f0ff",
+            border_width=1.5,
+            text_color="#00f0ff",
+            hover_color="#102e4d",
+            height=42,
+            width=340,
+            corner_radius=21,
         )
-        self.voice_action_btn.pack(pady=8)
+        self.voice_action_btn.pack(pady=6)
 
         # Mouse click-and-hold bindings (also works by clicking & holding the button!)
         self.voice_action_btn.bind("<ButtonPress-1>", lambda e: self._on_space_press(None))
         self.voice_action_btn.bind("<ButtonRelease-1>", lambda e: self._on_space_release(None))
 
         # Live Transcript Dialogue Card
-        self.voice_card = ctk.CTkFrame(self.view_voice, fg_color=_CARD_BG, corner_radius=12, width=640)
-        self.voice_card.pack(fill="x", padx=60, pady=12)
+        self.voice_card = ctk.CTkFrame(
+            self.view_voice, fg_color=_CARD_BG, border_color=_CARD_BORDER, border_width=1, corner_radius=16, width=640
+        )
+        self.voice_card.pack(fill="x", padx=80, pady=10)
 
         self.voice_user_text = ctk.CTkLabel(
             self.voice_card,
-            text="You: Press and speak or say 'Hey Jarvis'",
+            text="You: Speak aloud or hold Spacebar...",
             font=ctk.CTkFont(size=13, weight="bold"),
-            text_color="#80d8ff",
+            text_color="#38bdf8",
             wraplength=600,
             justify="center",
         )
-        self.voice_user_text.pack(padx=20, pady=(12, 6))
+        self.voice_user_text.pack(padx=20, pady=(12, 4))
 
         self.voice_jarvis_text = ctk.CTkLabel(
             self.voice_card,
             text="Jarvis: Standing by for your instructions, sir",
             font=ctk.CTkFont(size=13),
-            text_color="#c9d1d9",
+            text_color="#f8fafc",
             wraplength=600,
             justify="center",
         )
@@ -895,26 +926,26 @@ class JarvisApp(ctk.CTk):
         self.view_screen.pack_forget()
         self.view_settings.pack_forget()
 
-        # Reset button styles
-        self.btn_mode_voice.configure(fg_color="#1e2633", text_color="#c9d1d9")
-        self.btn_mode_chat.configure(fg_color="#1e2633", text_color="#c9d1d9")
-        self.btn_mode_screen.configure(fg_color="#1e2633", text_color="#c9d1d9")
-        self.btn_mode_settings.configure(fg_color="#1e2633", text_color="#c9d1d9")
+        # Reset button styles to minimal transparent pill
+        self.btn_mode_voice.configure(fg_color="transparent", text_color="#94a3b8")
+        self.btn_mode_chat.configure(fg_color="transparent", text_color="#94a3b8")
+        self.btn_mode_screen.configure(fg_color="transparent", text_color="#94a3b8")
+        self.btn_mode_settings.configure(fg_color="transparent", text_color="#94a3b8")
 
         if mode == "voice":
             self.view_voice.pack(fill="both", expand=True)
-            self.btn_mode_voice.configure(fg_color=_ACCENT_CYAN, text_color="#000000")
+            self.btn_mode_voice.configure(fg_color=_ACCENT_CYAN, text_color="#05070a")
         elif mode == "chat":
             self.view_chat.pack(fill="both", expand=True)
-            self.btn_mode_chat.configure(fg_color=_ACCENT_CYAN, text_color="#000000")
+            self.btn_mode_chat.configure(fg_color=_ACCENT_CYAN, text_color="#05070a")
         elif mode == "screen":
             self.view_screen.pack(fill="both", expand=True)
-            self.btn_mode_screen.configure(fg_color=_ACCENT_CYAN, text_color="#000000")
+            self.btn_mode_screen.configure(fg_color=_ACCENT_CYAN, text_color="#05070a")
             # Automatically capture and inspect active screen immediately
             self.after(60, self.worker.describe_current_screen)
         elif mode == "settings":
             self.view_settings.pack(fill="both", expand=True)
-            self.btn_mode_settings.configure(fg_color=_ACCENT_CYAN, text_color="#000000")
+            self.btn_mode_settings.configure(fg_color=_ACCENT_CYAN, text_color="#05070a")
 
     # ─────────────────────────────────────────────────────────────
     #  EVENT HANDLERS & CALLBACKS
@@ -1029,7 +1060,9 @@ class JarvisApp(ctk.CTk):
         self._space_is_held = True
         self.voice_action_btn.configure(
             text="🔴 RECORDING (RELEASE SPACEBAR TO SEND)",
-            fg_color=_ACCENT_MAGENTA
+            fg_color="#3b0716",
+            border_color="#f43f5e",
+            text_color="#f43f5e"
         )
         self.logo_canvas.set_state("Listening")
         self.status_lbl.configure(text="Listening")
@@ -1053,7 +1086,9 @@ class JarvisApp(ctk.CTk):
         self._space_is_held = False
         self.voice_action_btn.configure(
             text="🎙️ PRESS & HOLD SPACEBAR TO SPEAK",
-            fg_color=_ACCENT_CYAN
+            fg_color="#0a192f",
+            border_color="#00f0ff",
+            text_color="#00f0ff"
         )
         self.worker.stop_push_to_talk()
 

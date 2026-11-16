@@ -462,4 +462,9 @@ class GeminiLivePanel(ctk.CTkToplevel):
 
     def on_close(self) -> None:
         self.engine.stop()
+        if hasattr(self.master, "on_live_panel_closed"):
+            try:
+                self.master.on_live_panel_closed()
+            except Exception:
+                pass
         self.destroy()

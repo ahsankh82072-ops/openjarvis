@@ -1089,8 +1089,13 @@ class JarvisApp(ctk.CTk):
             self.live_panel.lift()
             self.live_panel.focus_force()
             return
+        self.worker.is_live_mode_active = True
         self.live_panel = GeminiLivePanel(self, self.live_engine)
         self.live_engine.start()
+
+    def on_live_panel_closed(self) -> None:
+        """Called when Gemini Live floating HUD is closed."""
+        self.worker.is_live_mode_active = False
 
     # ─────────────────────────────────────────────────────────────
     #  EVENT HANDLERS & CALLBACKS

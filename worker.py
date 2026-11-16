@@ -175,6 +175,7 @@ class JarvisWorker:
         # Spacebar Push-to-Talk Engine
         self.ptt_recorder = PushToTalkRecorder()
         self.is_ptt_active = False
+        self.is_live_mode_active = False
 
         self.hotkey_thread = threading.Thread(target=self._hotkey_listener, daemon=True)
         self.hotkey_thread.start()
@@ -213,7 +214,7 @@ class JarvisWorker:
         )
 
         while not self._exit_listener:
-            if self._is_speaking or self.emergency_stop or self.is_ptt_active:
+            if self._is_speaking or self.emergency_stop or self.is_ptt_active or self.is_live_mode_active:
                 time.sleep(0.3)
                 continue
 
@@ -1109,12 +1110,19 @@ class JarvisWorker:
             if action_key == last_action_key:
                 repeat_count += 1
                 if repeat_count >= 2:
-                    self.cb.get("on_chat", lambda s, t: None)("Jarvis", "\U0001f3c1 Goal achieved.")
+                    self.cb.get("on_chat", lambda s, t: None)("Jarvis", "🏁 Goal achieved.")
                     self._speak("Goal achieved, sir.")
                     break
             else:
                 repeat_count = 0
             last_action_key = action_key
+
+            # Special guard: Never press reload (f5/ctrl+r) more than once in a task
+            if act_type == "hotkey" and any(k in act_text.lower() for k in ["f5", "ctrl+r"]):
+                if any("f5" in h.lower() or "ctrl+r" in h.lower() for h in step_history):
+                    self.cb.get("on_chat", lambda s, t: None)("Jarvis", "🏁 Page refreshed already. Task complete.")
+                    self._speak("Page already refreshed, sir.")
+                    break
 
             # Execute action
             self.cb.get("on_status", lambda s: None)("Acting")

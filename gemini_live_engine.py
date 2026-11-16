@@ -2,15 +2,16 @@
 gemini_live_engine.py — High-Performance Bidirectional Gemini Live API Engine.
 
 Features:
-  1. Real-time bidirectional streaming over WebSockets via google-genai SDK.
-  2. Microphone streaming (16kHz PCM mono) via sounddevice.
+  1. Real-time bidirectional streaming over WebSockets via google-genai SDK v1beta.
+  2. Microphone streaming (16kHz PCM mono) with dynamic Voice Activity Detection (VAD).
   3. Audio playback (24kHz PCM mono) with instant interruption support.
   4. Real-time screen sharing (~1 fps, resized JPEG) with automatic sensitive page detection.
   5. Function calling with full OpenJarvis safety layer:
      - describe_screen, click, double_click, type_text, hotkey, scroll, open_app, take_note
      - 15-step ceiling, password/OTP blocking, critical action confirmation gate.
   6. Global emergency stop (Ctrl+Alt+Q) and Push-to-Talk (Ctrl+Space).
-  7. Robust reconnection logic on session timeout or transient network drops.
+  7. Thread-safe queue architecture avoiding concurrent WebSocket race conditions.
+  8. Automatic status watchdog preventing UI hangs in 'PROCESSING...' state.
 """
 
 from __future__ import annotations
@@ -20,9 +21,11 @@ import base64
 import ctypes
 import io
 import json
+import math
 import os
 import queue
 import re
+import struct
 import subprocess
 import sys
 import threading
@@ -52,6 +55,14 @@ except ImportError:
 _MIC_SAMPLE_RATE = 16000
 _PLAYBACK_SAMPLE_RATE = 24000
 _CHANNELS = 1
+
+# VAD thresholds
+_VAD_ENERGY_THRESHOLD = 350       # Peak 16-bit PCM threshold for human voice
+_VAD_SILENCE_DURATION = 1.1       # Seconds of silence after speech to trigger turn end
+_THINKING_WATCHDOG_TIMEOUT = 8.0  # Max seconds in Thinking state before reverting to Idle
+
+# Control sentinels for mic queue
+_SENTINEL_TURN_END = b"__TURN_END__"
 
 # Sensitive keywords that pause screen share immediately
 _SENSITIVE_WINDOW_KEYWORDS = [
@@ -95,6 +106,13 @@ class GeminiLiveEngine:
         self._playback_thread: Optional[threading.Thread] = None
         self._stop_playback = threading.Event()
 
+        # Local Voice Activity Detection (VAD) state
+        self._speech_detected = False
+        self._last_speech_time = 0.0
+
+        # Thinking state watchdog timer
+        self._watchdog_timer: Optional[threading.Timer] = None
+
         # Background thread and loop
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._engine_thread: Optional[threading.Thread] = None
@@ -104,6 +122,7 @@ class GeminiLiveEngine:
         # Hotkey listener thread
         self._hotkey_thread: Optional[threading.Thread] = None
         self._exit_hotkeys = False
+        self._last_status: Optional[str] = None
 
     # ─────────────────────────────────────────────────────────────
     #  PUBLIC CONTROL METHODS
@@ -119,6 +138,8 @@ class GeminiLiveEngine:
         self.emergency_stop = False
         self.is_running = True
         self._reconnect_attempts = 0
+        self._speech_detected = False
+        self._last_status = None
         reset_step_counter()
 
         # Start hotkey listener (Ctrl+Space for PTT, Ctrl+Alt+Q for emergency stop)
@@ -142,11 +163,12 @@ class GeminiLiveEngine:
         self.is_connected = False
         self.screen_share_active = False
         self._exit_hotkeys = True
+        self._cancel_watchdog()
 
         self._flush_playback()
         self._stop_playback.set()
 
-        # Stop async tasks
+        # Stop async tasks cleanly
         if self._loop and self._loop.is_running():
             self._loop.call_soon_threadsafe(self._cancel_active_tasks)
 
@@ -168,20 +190,44 @@ class GeminiLiveEngine:
         """Set push-to-talk button/key state."""
         self.ptt_active = pressed
         if pressed:
-            # User wants to speak -> interrupt any ongoing playback
+            # User started speaking via PTT
             self._flush_playback()
+            self._cancel_watchdog()
             self._notify_status("Listening")
         else:
-            self._notify_status("Thinking")
-            # Signal end of user audio stream turn so Gemini generates reply
-            if self._current_session and self._loop and self._loop.is_running():
-                try:
-                    asyncio.run_coroutine_threadsafe(
-                        self._current_session.send_realtime_input(audio_stream_end=True),
-                        self._loop
-                    )
-                except Exception:
-                    pass
+            # User released PTT -> queue turn end cleanly
+            self._signal_turn_end()
+
+    def _signal_turn_end(self) -> None:
+        """Queues a turn end marker in the mic stream and sets Thinking state with watchdog."""
+        if self._loop and self._mic_queue:
+            try:
+                self._loop.call_soon_threadsafe(self._mic_queue.put_nowait, _SENTINEL_TURN_END)
+            except Exception:
+                pass
+        self._notify_status("Thinking")
+        self._reset_watchdog()
+
+    def _reset_watchdog(self) -> None:
+        """Starts an 8-second watchdog timer to return status to Idle if no reply arrives."""
+        self._cancel_watchdog()
+        self._watchdog_timer = threading.Timer(_THINKING_WATCHDOG_TIMEOUT, self._on_watchdog_timeout)
+        self._watchdog_timer.daemon = True
+        self._watchdog_timer.start()
+
+    def _cancel_watchdog(self) -> None:
+        """Cancels the thinking watchdog timer."""
+        if self._watchdog_timer:
+            try:
+                self._watchdog_timer.cancel()
+            except Exception:
+                pass
+            self._watchdog_timer = None
+
+    def _on_watchdog_timeout(self) -> None:
+        """Watchdog fired: Gemini did not produce a response within timeout."""
+        if self.is_running and not self.is_speaking:
+            self._notify_status("Idle")
 
     def approve_action(self, approved: bool) -> None:
         """Callback from UI when user confirms or rejects a critical action."""
@@ -193,6 +239,7 @@ class GeminiLiveEngine:
     # ─────────────────────────────────────────────────────────────
     def _playback_worker(self) -> None:
         """Plays 24kHz PCM audio chunks streamed back by Gemini Live."""
+        out_stream = None
         try:
             out_stream = sd.RawOutputStream(
                 samplerate=_PLAYBACK_SAMPLE_RATE,
@@ -210,6 +257,9 @@ class GeminiLiveEngine:
                 try:
                     chunk = self._playback_queue.get(timeout=0.1)
                 except queue.Empty:
+                    if self.is_speaking:
+                        self.is_speaking = False
+                        self._notify_status("Idle")
                     continue
 
                 if self._stop_playback.is_set() or self.emergency_stop:
@@ -217,19 +267,19 @@ class GeminiLiveEngine:
 
                 if chunk:
                     try:
-                        self.is_speaking = True
-                        self._notify_status("Speaking")
+                        if not self.is_speaking:
+                            self.is_speaking = True
+                            self._notify_status("Speaking")
                         out_stream.write(chunk)
                     except Exception:
                         pass
-                else:
-                    self.is_speaking = False
         finally:
-            try:
-                out_stream.stop()
-                out_stream.close()
-            except Exception:
-                pass
+            if out_stream:
+                try:
+                    out_stream.stop()
+                    out_stream.close()
+                except Exception:
+                    pass
             self.is_speaking = False
 
     def _flush_playback(self) -> None:
@@ -273,14 +323,13 @@ class GeminiLiveEngine:
                     self._notify_error("Gemini Live quota limit reached. Please wait a moment.")
                     break
                 else:
-                    # Attempt 1 graceful reconnection on timeout or socket drop
                     if self._reconnect_attempts < 1 and self.is_running:
                         self._reconnect_attempts += 1
-                        self._notify_chat("Jarvis", "🔄 Live session timed out or disconnected. Reconnecting...")
+                        self._notify_chat("Jarvis", "🔄 Live session reconnecting...")
                         await asyncio.sleep(1.5)
                         continue
                     else:
-                        self._notify_error(f"Live session closed: {exc}")
+                        self._notify_error(f"Live session ended: {exc}")
                         break
         self.is_running = False
         self.is_connected = False
@@ -291,10 +340,9 @@ class GeminiLiveEngine:
     # ─────────────────────────────────────────────────────────────
     async def _run_single_session(self) -> None:
         """Initializes client, sets up tools, and runs bidirectional streaming."""
-        # 1. API Key resolution (Never printed or saved in files)
         api_key = (os.environ.get("GEMINI_API_KEY") or config.gemini_api_key or "").strip()
         if not api_key:
-            self._notify_error("GEMINI_API_KEY environment variable is not set. Please set it or enter it in Settings.")
+            self._notify_error("GEMINI_API_KEY is not set. Please enter it in Settings.")
             self.is_running = False
             return
 
@@ -304,10 +352,8 @@ class GeminiLiveEngine:
             model_id = "gemini-2.5-flash-native-audio-latest"
         voice_name = config.live_voice or "Puck"
 
-        # 2. Tools Declaration
         tools_list = self._build_tool_declarations()
 
-        # 3. Live Configuration
         system_prompt = (
             "You are Jarvis, a friendly, quick voice assistant. Keep answers short and natural. "
             "When a task needs the computer, say what you are about to do, then do it with your tools. "
@@ -334,14 +380,11 @@ class GeminiLiveEngine:
         self._notify_status("Connecting")
         self._mic_queue = asyncio.Queue()
 
-        # Open microphone input stream
+        # Open microphone stream
         mic_stream = None
         try:
             def _mic_callback(indata, frames, time_info, status):
-                if status and "overflow" not in str(status).lower():
-                    pass
                 if self.is_running and not self.emergency_stop:
-                    # If PTT is enabled, stream audio; else stream continuously
                     raw = bytes(indata)
                     if self._loop and self._mic_queue:
                         self._loop.call_soon_threadsafe(self._mic_queue.put_nowait, raw)
@@ -355,7 +398,7 @@ class GeminiLiveEngine:
             )
             mic_stream.start()
         except Exception as e:
-            self._notify_error(f"Could not initialize microphone: {e}")
+            self._notify_error(f"Could not open microphone: {e}")
             return
 
         try:
@@ -363,15 +406,13 @@ class GeminiLiveEngine:
                 self._current_session = session
                 self.is_connected = True
                 self._reconnect_attempts = 0
-                self._notify_status("Live")
+                self._notify_status("Idle")
                 self._notify_chat("Jarvis", f"⚡ Connected to Gemini Live ({model_id}, Voice: {voice_name}). Standing by...")
 
-                # Launch concurrent coroutines
                 mic_task = asyncio.create_task(self._mic_sender_loop(session))
                 screen_task = asyncio.create_task(self._screen_sender_loop(session))
                 receive_task = asyncio.create_task(self._receive_loop(session))
 
-                # Wait until any task errors or session closes
                 done, pending = await asyncio.wait(
                     [mic_task, screen_task, receive_task],
                     return_when=asyncio.FIRST_EXCEPTION
@@ -394,19 +435,49 @@ class GeminiLiveEngine:
             self.is_connected = False
 
     # ─────────────────────────────────────────────────────────────
-    #  MIC SENDER LOOP
+    #  MIC SENDER LOOP WITH LOCAL VAD & TURN-TAKING
     # ─────────────────────────────────────────────────────────────
     async def _mic_sender_loop(self, session: Any) -> None:
         """Pulls audio bytes from microphone queue and streams to Gemini Live."""
         while self.is_running and not self.emergency_stop:
-            pcm_chunk = await self._mic_queue.get()
+            item = await self._mic_queue.get()
             if self.emergency_stop:
                 break
 
-            # If user spoke, trigger visualizer pulse
-            if not self.is_speaking and not self.ptt_active:
-                self._notify_status("Listening")
+            # Check for turn-end control sentinel
+            if item == _SENTINEL_TURN_END:
+                try:
+                    await session.send_realtime_input(audio_stream_end=True)
+                except Exception as e:
+                    print(f"[Gemini Live] Error sending stream end: {e}")
+                self._speech_detected = False
+                continue
 
+            # Calculate peak audio amplitude to detect speech
+            pcm_chunk = item
+            num_samples = len(pcm_chunk) // 2
+            if num_samples > 0:
+                try:
+                    samples = struct.unpack(f"<{num_samples}h", pcm_chunk)
+                    peak = max(abs(s) for s in samples)
+                except Exception:
+                    peak = 0
+
+                now = time.time()
+                if peak > _VAD_ENERGY_THRESHOLD:
+                    # User is actively speaking
+                    if not self._speech_detected and not self.is_speaking:
+                        self._speech_detected = True
+                        self._notify_status("Listening")
+                    self._last_speech_time = now
+
+                elif self._speech_detected and not self.ptt_active:
+                    # Silence detected after speech in open-mic mode
+                    if now - self._last_speech_time > _VAD_SILENCE_DURATION:
+                        self._speech_detected = False
+                        self._signal_turn_end()
+
+            # Stream audio chunk to Gemini
             try:
                 await session.send_realtime_input(
                     audio=types.Blob(
@@ -415,6 +486,7 @@ class GeminiLiveEngine:
                     )
                 )
             except Exception as e:
+                print(f"[Gemini Live] Mic streaming chunk error: {e}")
                 break
 
     # ─────────────────────────────────────────────────────────────
@@ -432,7 +504,6 @@ class GeminiLiveEngine:
             is_sensitive = any(kw in active_title for kw in _SENSITIVE_WINDOW_KEYWORDS)
 
             if is_sensitive:
-                # INSTANT SAFETY CUTOFF: Auto-stop screen sharing and alert user
                 self.screen_share_active = False
                 self._notify_screen_share(False)
                 alert_msg = f"⚠️ Sensitive window detected ('{active_title}'). Screen share auto-paused for security."
@@ -444,7 +515,6 @@ class GeminiLiveEngine:
                 sc_res = self.screen_tool.execute(resize=True)
                 if sc_res.success and sc_res.content:
                     raw_png = base64.b64decode(sc_res.content)
-                    # Convert PNG to high-efficiency JPEG
                     img = Image.open(io.BytesIO(raw_png)).convert("RGB")
                     img.thumbnail((1024, 576), Image.LANCZOS)
                     jpeg_buf = io.BytesIO()
@@ -465,55 +535,84 @@ class GeminiLiveEngine:
     # ─────────────────────────────────────────────────────────────
     async def _receive_loop(self, session: Any) -> None:
         """Receives live model responses, audio streams, and tool requests."""
+        user_transcript_buf: List[str] = []
+        jarvis_transcript_buf: List[str] = []
+
         async for response in session.receive():
             if self.emergency_stop:
                 break
 
             server_content = response.server_content
             if server_content is not None:
-                # 1. Handle user interruption signal
+                # 1. Handle user interruption
                 if server_content.interrupted:
                     self._flush_playback()
                     self._notify_status("Listening")
+                    jarvis_transcript_buf.clear()
 
-                # 2. Real-time text transcript for user input
+                # 2. Incremental user input transcription
                 if server_content.input_transcription and server_content.input_transcription.text:
-                    u_text = server_content.input_transcription.text.strip()
-                    if u_text:
-                        self._notify_transcript("You", u_text, is_final=False)
+                    delta = server_content.input_transcription.text
+                    user_transcript_buf.append(delta)
+                    accumulated = "".join(user_transcript_buf).strip()
+                    if accumulated:
+                        self._notify_transcript("You", accumulated, is_final=False)
 
                 # 3. Model turn audio parts & output transcription
                 if server_content.model_turn:
+                    self._cancel_watchdog()
                     for part in server_content.model_turn.parts:
-                        # Output audio chunk
                         if part.inline_data and part.inline_data.data:
                             self._playback_queue.put(part.inline_data.data)
 
-                        # Output text chunk
                         if part.text:
-                            self._notify_transcript("Jarvis", part.text, is_final=False)
+                            jarvis_transcript_buf.append(part.text)
+                            accumulated = "".join(jarvis_transcript_buf).strip()
+                            if accumulated:
+                                self._notify_transcript("Jarvis", accumulated, is_final=False)
 
                 if server_content.output_transcription and server_content.output_transcription.text:
-                    j_text = server_content.output_transcription.text.strip()
-                    if j_text:
-                        self._notify_transcript("Jarvis", j_text, is_final=True)
+                    self._cancel_watchdog()
+                    delta = server_content.output_transcription.text
+                    jarvis_transcript_buf.append(delta)
+                    accumulated = "".join(jarvis_transcript_buf).strip()
+                    if accumulated:
+                        self._notify_transcript("Jarvis", accumulated, is_final=False)
 
+                # 4. Turn complete
                 if server_content.turn_complete:
-                    self._notify_status("Idle")
+                    self._cancel_watchdog()
+                    # Finalize user transcript
+                    if user_transcript_buf:
+                        final_u = "".join(user_transcript_buf).strip()
+                        if final_u:
+                            self._notify_transcript("You", final_u, is_final=True)
+                            self._notify_chat("You", final_u)
+                        user_transcript_buf.clear()
 
-            # 4. Handle Tool / Function Calling
+                    # Finalize Jarvis transcript
+                    if jarvis_transcript_buf:
+                        final_j = "".join(jarvis_transcript_buf).strip()
+                        if final_j:
+                            self._notify_transcript("Jarvis", final_j, is_final=True)
+                            self._notify_chat("Jarvis", final_j)
+                        jarvis_transcript_buf.clear()
+
+                    if self._playback_queue.empty() and not self.is_speaking:
+                        self._notify_status("Idle")
+
+            # 5. Handle Tool / Function Calling
             tool_call = response.tool_call
             if tool_call:
+                self._cancel_watchdog()
                 self._notify_status("Acting")
                 for fn_call in tool_call.function_calls:
                     name = fn_call.name
                     args = fn_call.args or {}
                     call_id = fn_call.id
 
-                    # Execute tool through safety gate
                     tool_result_str = await self._execute_safe_tool(name, args)
 
-                    # Send tool response back to Gemini session
                     try:
                         await session.send_tool_response(
                             function_responses=[
@@ -525,26 +624,23 @@ class GeminiLiveEngine:
                             ]
                         )
                     except Exception as e:
-                        pass
+                        print(f"[Gemini Live] Tool response error: {e}")
 
     # ─────────────────────────────────────────────────────────────
     #  TOOL EXECUTION WITH SAFETY GUARDS & CONFIRMATION
     # ─────────────────────────────────────────────────────────────
     async def _execute_safe_tool(self, name: str, args: Dict[str, Any]) -> str:
         """Executes a requested tool function while applying all safety checks."""
-        # 1. Safety Check: Critical actions requiring user confirmation
         desc_str = f"{name}({args})"
         is_critical = any(re.search(pat, desc_str.lower()) for pat in _CRITICAL_ACTIONS)
 
         if is_critical or config.ask_before_every_action:
-            # Request user approval via callback
             self.waiting_for_confirmation = True
             self._confirm_event.clear()
             self._notify_status("Waiting for your approval")
             confirm_prompt = f"Confirm: Jarvis wants to execute '{desc_str}'. Approve?"
             self._notify_confirm(confirm_prompt)
 
-            # Wait for user decision (UI button or voice)
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, self._confirm_event.wait)
             self.waiting_for_confirmation = False
@@ -553,7 +649,6 @@ class GeminiLiveEngine:
                 self._notify_chat("Jarvis", f"❌ Action cancelled: '{desc_str}'.")
                 return "Action cancelled by user for safety."
 
-        # 2. Dispatch to specific tool implementation
         try:
             if name == "describe_screen":
                 q = str(args.get("question", "What is currently on the screen?"))
@@ -605,7 +700,7 @@ class GeminiLiveEngine:
                 note_text = str(args.get("note", "")).strip()
                 notes_file = os.path.expanduser("~/.openjarvis/notes.txt")
                 os.makedirs(os.path.dirname(notes_file), exist_ok=True)
-                ts = datetime_now = time.strftime("%Y-%m-%d %H:%M:%S")
+                ts = time.strftime("%Y-%m-%d %H:%M:%S")
                 with open(notes_file, "a", encoding="utf-8") as f:
                     f.write(f"\n[{ts}] {note_text}\n")
                 subprocess.Popen(f'notepad.exe "{notes_file}"', shell=True)

@@ -13,7 +13,7 @@
   "ask_before_every_action": false,
   "full_pc_control": true,
   "always_on_top": false,
-  "max_steps": 25,
+  "max_steps": 5,
   "gmail_address": "",
   "gmail_app_password": "",
   "whatsapp_default_phone": "",

@@ -188,6 +188,11 @@ class JarvisApp(ctk.CTk):
         # Switch to the requested initial mode
         self.switch_mode(start_mode)
 
+        # Spacebar Push-To-Talk Bindings
+        self._space_is_held = False
+        self.bind_all("<KeyPress-space>", self._on_space_press)
+        self.bind_all("<KeyRelease-space>", self._on_space_release)
+
     def _thread_safe(self, func):
         def _wrapper(*args, **kwargs):
             self.after(0, lambda: func(*args, **kwargs))
@@ -327,16 +332,19 @@ class JarvisApp(ctk.CTk):
         # Big Voice Push-to-Talk Button
         self.voice_action_btn = ctk.CTkButton(
             self.view_voice,
-            text="🎙️ PRESS & SPEAK (OR SAY 'HEY JARVIS')",
+            text="🎙️ PRESS & HOLD SPACEBAR TO SPEAK",
             font=ctk.CTkFont(size=14, weight="bold"),
             fg_color=_ACCENT_CYAN,
             text_color="#000000",
             hover_color="#00b0ff",
             height=46,
-            width=360,
-            command=self.on_voice_talk_clicked,
+            width=380,
         )
         self.voice_action_btn.pack(pady=8)
+
+        # Mouse click-and-hold bindings (also works by clicking & holding the button!)
+        self.voice_action_btn.bind("<ButtonPress-1>", lambda e: self._on_space_press(None))
+        self.voice_action_btn.bind("<ButtonRelease-1>", lambda e: self._on_space_release(None))
 
         # Live Transcript Dialogue Card
         self.voice_card = ctk.CTkFrame(self.view_voice, fg_color=_CARD_BG, corner_radius=12, width=640)
@@ -629,6 +637,50 @@ class JarvisApp(ctk.CTk):
             return
         self.text_input.delete(0, "end")
         self.worker.start_task(text)
+
+    def _on_space_press(self, event=None) -> None:
+        """Invoked when user presses and holds Spacebar (or clicks & holds mic button)."""
+        try:
+            focus_w = self.focus_get()
+            # If currently typing in chat input entry, let Spacebar type spaces normally
+            if focus_w and hasattr(self, "text_input"):
+                if focus_w == self.text_input or focus_w == getattr(self.text_input, "_entry", None):
+                    return
+        except Exception:
+            pass
+
+        if self._space_is_held:
+            return  # Prevent keyboard auto-repeat
+
+        self._space_is_held = True
+        self.voice_action_btn.configure(
+            text="🔴 RECORDING (RELEASE SPACEBAR TO SEND)",
+            fg_color=_ACCENT_MAGENTA
+        )
+        self.logo_canvas.set_state("Listening")
+        self.status_lbl.configure(text="Listening")
+        self.status_dot.configure(text_color=_ACCENT_MAGENTA)
+        self.worker.start_push_to_talk()
+
+    def _on_space_release(self, event=None) -> None:
+        """Invoked when user releases Spacebar (or mouse button)."""
+        try:
+            focus_w = self.focus_get()
+            if focus_w and hasattr(self, "text_input"):
+                if focus_w == self.text_input or focus_w == getattr(self.text_input, "_entry", None):
+                    return
+        except Exception:
+            pass
+
+        if not self._space_is_held:
+            return
+
+        self._space_is_held = False
+        self.voice_action_btn.configure(
+            text="🎙️ PRESS & HOLD SPACEBAR TO SPEAK",
+            fg_color=_ACCENT_CYAN
+        )
+        self.worker.stop_push_to_talk()
 
     def on_voice_talk_clicked(self) -> None:
         """Triggered from Talking Mode center button."""

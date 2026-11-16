@@ -46,6 +46,88 @@ _CRITICAL_ACTIONS = [
 _LOG_FILE = os.path.join(_REPO_ROOT, "computer_actions.log")
 
 
+class PushToTalkRecorder:
+    """Captures clean audio frames while Spacebar or mic button is held down."""
+
+    def __init__(self) -> None:
+        try:
+            import pyaudio
+            self.pa = pyaudio.PyAudio()
+        except Exception:
+            self.pa = None
+        self.stream = None
+        self.is_recording = False
+        self.frames: List[bytes] = []
+        self.sample_rate = 16000
+
+    def start(self) -> None:
+        if self.is_recording or not self.pa:
+            return
+        self.is_recording = True
+        self.frames = []
+        import pyaudio
+        try:
+            self.stream = self.pa.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=self.sample_rate,
+                input=True,
+                frames_per_buffer=1024
+            )
+        except Exception:
+            self.sample_rate = 44100
+            try:
+                self.stream = self.pa.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=self.sample_rate,
+                    input=True,
+                    frames_per_buffer=1024
+                )
+            except Exception:
+                self.is_recording = False
+                return
+
+        def _reader():
+            while self.is_recording and self.stream:
+                try:
+                    data = self.stream.read(1024, exception_on_overflow=False)
+                    self.frames.append(data)
+                except Exception:
+                    break
+
+        threading.Thread(target=_reader, daemon=True).start()
+
+    def stop(self) -> Optional[str]:
+        if not self.is_recording:
+            return None
+        self.is_recording = False
+        if self.stream:
+            try:
+                self.stream.stop_stream()
+                self.stream.close()
+            except Exception:
+                pass
+            self.stream = None
+
+        if not self.frames:
+            return None
+
+        raw_bytes = b"".join(self.frames)
+        # Require at least 0.25s of audio to prevent micro-clicks
+        if len(raw_bytes) < int(self.sample_rate * 2 * 0.25):
+            return None
+
+        try:
+            import speech_recognition as sr
+            audio_data = sr.AudioData(raw_bytes, self.sample_rate, 2)
+            r = sr.Recognizer()
+            text = r.recognize_google(audio_data).strip()
+            return text if text else None
+        except Exception:
+            return None
+
+
 class JarvisWorker:
     """Manages asynchronous task execution without freezing the UI."""
 
@@ -67,106 +149,49 @@ class JarvisWorker:
 
         self._exit_listener = False
         self._is_speaking = False
+
+        # Spacebar Push-to-Talk Engine
+        self.ptt_recorder = PushToTalkRecorder()
+        self.is_ptt_active = False
+
         self.hotkey_thread = threading.Thread(target=self._hotkey_listener, daemon=True)
         self.hotkey_thread.start()
 
-        # Always-on Background Voice Listener (Listens even when minimized or in background!)
-        self.bg_mic_thread = threading.Thread(target=self._bg_voice_listener, daemon=True)
-        self.bg_mic_thread.start()
-
-    def _bg_voice_listener(self) -> None:
-        """
-        Continuous background microphone listener that listens for 'Hey Jarvis' or 'Jarvis'
-        even when the window is minimized or behind other applications.
-        Also handles hands-free voice approvals ('yes', 'proceed', 'cancel').
-        """
-        try:
-            import speech_recognition as sr
-        except ImportError:
+    def start_push_to_talk(self) -> None:
+        """Invoked when user presses and holds Spacebar."""
+        if self.is_ptt_active or self.emergency_stop:
             return
+        self.is_ptt_active = True
+        self.cb.get("on_status", lambda s: None)("Listening")
+        self.ptt_recorder.start()
 
-        recognizer = sr.Recognizer()
-        recognizer.dynamic_energy_threshold = True
-        recognizer.pause_threshold = 0.8
-        recognizer.phrase_threshold = 0.2
-        recognizer.non_speaking_duration = 0.3
+    def stop_push_to_talk(self) -> None:
+        """Invoked when user releases Spacebar."""
+        if not self.is_ptt_active:
+            return
+        self.is_ptt_active = False
+        self.cb.get("on_status", lambda s: None)("Thinking")
 
-        try:
-            with sr.Microphone() as source:
-                recognizer.adjust_for_ambient_noise(source, duration=0.6)
-        except Exception:
-            pass
+        def _worker():
+            spoken = self.ptt_recorder.stop()
+            if spoken:
+                # If waiting for plan approval, check for voice yes / no
+                if self.waiting_for_plan_approval:
+                    lower = spoken.lower().strip()
+                    if any(w in lower for w in ["yes", "approve", "proceed", "go", "do it", "sure"]):
+                        self.approve_plan(True)
+                        self._speak("Plan approved, executing now.")
+                        return
+                    elif any(w in lower for w in ["no", "cancel", "stop", "abort"]):
+                        self.approve_plan(False)
+                        self._speak("Plan cancelled, sir.")
+                        return
 
-        wake_regex = re.compile(
-            r'\b(hey|hay|hi|hello|ok|yo|ai|wake\s+up)?\s*(jarvis|javis|jarves|jervis|travis|service|chavez|jar|java)\b',
-            re.IGNORECASE
-        )
+                self.start_task(spoken)
+            else:
+                self.cb.get("on_status", lambda s: None)("Idle")
 
-        is_awake = False
-        awake_until = 0.0
-
-        while not self._exit_listener:
-            if self._is_speaking or self.emergency_stop:
-                time.sleep(0.3)
-                continue
-
-            try:
-                with sr.Microphone() as source:
-                    audio = recognizer.listen(source, timeout=4, phrase_time_limit=9)
-            except Exception:
-                continue
-
-            if self._is_speaking or self.emergency_stop:
-                continue
-
-            try:
-                text = recognizer.recognize_google(audio).strip()
-            except Exception:
-                continue
-
-            if not text:
-                continue
-
-            lower = text.lower().strip()
-
-            # Voice Plan Approval Check (Hands-Free!)
-            if self.waiting_for_plan_approval:
-                if any(w in lower for w in ["yes", "approve", "proceed", "go", "go ahead", "do it", "sure", "ok", "okay"]):
-                    self.approve_plan(True)
-                    self._speak("Plan approved, executing now.")
-                    continue
-                elif any(w in lower for w in ["no", "cancel", "stop", "abort", "don't", "dont"]):
-                    self.approve_plan(False)
-                    self._speak("Plan cancelled, sir.")
-                    continue
-
-            # Check if previous awake window expired
-            if is_awake and time.time() > awake_until:
-                is_awake = False
-
-            # Case 1: Wake word detected (e.g. "Hey Jarvis open notepad" or just "Hey Jarvis")
-            if wake_regex.search(lower):
-                rest = wake_regex.sub('', lower).strip(" ,:!?.")
-                rest = re.sub(r'^(?:and|also|then|please|can you|could you|now)\s+', '', rest).strip()
-                if not rest:
-                    # User said only "Hey Jarvis"
-                    is_awake = True
-                    awake_until = time.time() + 25.0
-                    self.cb.get("on_status", lambda s: None)("Listening")
-                    self.cb.get("on_chat", lambda s, t: None)("You", text)
-                    self.cb.get("on_chat", lambda s, t: None)("Jarvis", "Yes, sir? How may I assist you?")
-                    self._speak("Yes, sir? How may I assist you?")
-                else:
-                    # User said "Hey Jarvis [command]" in one breath
-                    is_awake = True
-                    awake_until = time.time() + 25.0
-                    self.start_task(rest)
-                continue
-
-            # Case 2: Already awake within the 25-second window -> direct command
-            if is_awake:
-                awake_until = time.time() + 25.0
-                self.start_task(lower)
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _hotkey_listener(self) -> None:
         """Global emergency stop listener: Ctrl+Alt+Q."""
